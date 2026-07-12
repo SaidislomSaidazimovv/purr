@@ -67,6 +67,7 @@ function App() {
       if (stateRef.current === "sleep") {
         if (idleSec < REAL_IDLE_SLEEP_SECONDS) {
           setState("idle");
+          invoke("log_event", { kind: "sleep_end", idleSeconds: idleSec }).catch(() => {});
         }
         return;
       }
@@ -74,6 +75,7 @@ function App() {
       if (stateRef.current === "idle") {
         if (idleSec >= REAL_IDLE_SLEEP_SECONDS) {
           setState("sleep");
+          invoke("log_event", { kind: "sleep_start", idleSeconds: idleSec }).catch(() => {});
           return;
         }
         if (Math.random() < 0.5) return;
@@ -182,13 +184,25 @@ function App() {
     idle_seconds: number;
   } | null>(null);
 
+  const lastLoggedCategory = useRef<string | null>(null);
+
   useEffect(() => {
     const id = setInterval(() => {
       invoke("get_activity_snapshot")
         .then((snap) => {
           const s = snap as typeof debugSnapshot;
           setDebugSnapshot(s);
-          if (s) systemIdleSeconds.current = s.idle_seconds;
+          if (s) {
+            systemIdleSeconds.current = s.idle_seconds;
+            if (s.category !== lastLoggedCategory.current) {
+              lastLoggedCategory.current = s.category;
+              invoke("log_event", {
+                kind: "foreground",
+                category: s.category,
+                processName: s.process_name,
+              }).catch(() => {});
+            }
+          }
         })
         .catch(() => {});
     }, 1500);
@@ -212,12 +226,26 @@ function App() {
             setCommitCount((c) => c + 1);
             if (stateRef.current === "sleep") setState("idle");
             triggerReaction();
+            invoke("log_event", { kind: "commit" }).catch(() => {});
           }
         })
         .catch((e) => setGitError(String(e)));
     }, 3000);
     return () => clearInterval(id);
   }, [triggerReaction]);
+
+  // TEMPORARY (Faza 2 spike): poll SQLite row count so we can visually
+  // confirm log_event writes are actually landing in the database.
+  const [dbEventCount, setDbEventCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      invoke("get_event_count")
+        .then((n) => setDbEventCount(n as number))
+        .catch(() => {});
+    }, 2000);
+    return () => clearInterval(id);
+  }, []);
 
   const asleep = state === "sleep";
 
@@ -243,6 +271,8 @@ function App() {
         <br />
         pet pos: ({Math.round(pos.x)}, {Math.round(pos.y)}) | state: {state} | win: {window.innerWidth}x
         {window.innerHeight}
+        <br />
+        db events: {dbEventCount ?? "?"}
         {gitError && <div style={{ color: "#f55" }}>git xato: {gitError}</div>}
       </div>
     )}

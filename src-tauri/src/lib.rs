@@ -1,9 +1,12 @@
+mod db;
 mod git;
 mod tracker;
 mod tray;
 mod window;
 
+use db::{get_event_count, log_event, open_db, DbState};
 use git::{check_new_commit, GitWatcherState};
+use tauri::Manager;
 use tracker::get_activity_snapshot;
 use tray::setup_tray;
 use window::{
@@ -22,13 +25,17 @@ pub fn run() {
             update_pet_bounds,
             set_drag_active,
             get_activity_snapshot,
-            check_new_commit
+            check_new_commit,
+            log_event,
+            get_event_count
         ])
         .setup(|app| {
             let handle = app.handle().clone();
             fit_to_primary_monitor(&handle);
             start_click_through_watcher(handle.clone());
             setup_tray(&handle)?;
+            let conn = open_db(&handle).expect("failed to open sqlite db");
+            app.manage(DbState(std::sync::Mutex::new(conn)));
             Ok(())
         })
         .run(tauri::generate_context!())
