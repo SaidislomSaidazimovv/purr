@@ -181,9 +181,11 @@ function App() {
     if (state !== "drag") return;
 
     const onMove = (e: MouseEvent) => {
+      const maxX = window.innerWidth - PET_SIZE;
+      const maxY = window.innerHeight - PET_SIZE;
       setPos({
-        x: e.clientX - dragOffset.current.x,
-        y: e.clientY - dragOffset.current.y,
+        x: Math.max(0, Math.min(maxX, e.clientX - dragOffset.current.x)),
+        y: Math.max(0, Math.min(maxY, e.clientY - dragOffset.current.y)),
       });
     };
     const onUp = (e: MouseEvent) => {
