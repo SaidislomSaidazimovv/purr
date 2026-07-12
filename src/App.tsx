@@ -11,7 +11,20 @@ const CLICK_MAX_MOVE = 6; // px — below this, mouseup counts as a "click" not 
 const CLICK_MAX_MS = 300; // below this duration, same
 const REACTION_MS = 400;
 
+// Brain: a simple mood score nudged by tracked events, decaying back to
+// neutral over time. Mood in turn affects how the pet looks/moves — the
+// Faza 2 "kayfiyat animatsiyaga ta'sir qiladi" gate. Faza 3's rule engine
+// will read the same signals for actual dialogue.
+const MOOD_CLAMP = 100;
+const MOOD_COMMIT_BOOST = 25;
+const MOOD_CODE_BOOST = 5;
+const MOOD_GAME_PENALTY = 10;
+const MOOD_DECAY = 0.97; // multiplied in every 2.5s FSM tick, pulls score toward 0
+const MOOD_HAPPY_THRESHOLD = 30;
+const MOOD_GRUMPY_THRESHOLD = -30;
+
 type PetState = "idle" | "walk" | "drag" | "fall" | "sleep";
+type Mood = "happy" | "neutral" | "grumpy";
 
 function App() {
   const [pos, setPos] = useState({ x: 200, y: 200 });
@@ -30,6 +43,21 @@ function App() {
   const fallVelocity = useRef(0);
   const reactionTimeout = useRef<number | null>(null);
   const systemIdleSeconds = useRef(0);
+
+  // Brain: mood score in [-100, 100], nudged by events, decaying to 0.
+  const [moodScore, setMoodScore] = useState(0);
+  const moodRef = useRef<Mood>("neutral");
+  const mood: Mood =
+    moodScore >= MOOD_HAPPY_THRESHOLD
+      ? "happy"
+      : moodScore <= MOOD_GRUMPY_THRESHOLD
+        ? "grumpy"
+        : "neutral";
+  moodRef.current = mood;
+
+  const bumpMood = useCallback((delta: number) => {
+    setMoodScore((m) => Math.max(-MOOD_CLAMP, Math.min(MOOD_CLAMP, m + delta)));
+  }, []);
 
   // Physical screen bounds of the pet, reported to Rust for click-through hit-testing.
   const reportBounds = useCallback((x: number, y: number) => {
@@ -64,6 +92,8 @@ function App() {
     const id = setInterval(() => {
       const idleSec = systemIdleSeconds.current;
 
+      setMoodScore((m) => (Math.abs(m) < 0.5 ? 0 : m * MOOD_DECAY));
+
       if (stateRef.current === "sleep") {
         if (idleSec < REAL_IDLE_SLEEP_SECONDS) {
           setState("idle");
@@ -78,7 +108,10 @@ function App() {
           invoke("log_event", { kind: "sleep_start", idleSeconds: idleSec }).catch(() => {});
           return;
         }
-        if (Math.random() < 0.5) return;
+        // A happy pet wanders more often; a grumpy (lazy, sulking) one stays put.
+        const wanderChance =
+          moodRef.current === "happy" ? 0.65 : moodRef.current === "grumpy" ? 0.25 : 0.5;
+        if (Math.random() > wanderChance) return;
         const groundWidth = window.innerWidth - PET_SIZE;
         const delta = (Math.random() - 0.5) * 300;
         const target = Math.max(0, Math.min(groundWidth, posRef.current.x + delta));
@@ -106,7 +139,8 @@ function App() {
           walkTarget.current = null;
           setState("idle");
         } else {
-          const step = Math.sign(diff) * WALK_SPEED * dt;
+          const speedMul = moodRef.current === "happy" ? 1.5 : moodRef.current === "grumpy" ? 0.6 : 1;
+          const step = Math.sign(diff) * WALK_SPEED * speedMul * dt;
           setPos((p) => ({ ...p, x: current + step }));
         }
       } else if (stateRef.current === "fall") {
@@ -201,13 +235,15 @@ function App() {
                 category: s.category,
                 processName: s.process_name,
               }).catch(() => {});
+              if (s.category === "code") bumpMood(MOOD_CODE_BOOST);
+              else if (s.category === "game") bumpMood(-MOOD_GAME_PENALTY);
             }
           }
         })
         .catch(() => {});
     }, 1500);
     return () => clearInterval(id);
-  }, []);
+  }, [bumpMood]);
 
   // TEMPORARY (Faza 2 spike): poll our own repo for new commits; react with
   // the same click-bounce animation when one is detected. This is the real
@@ -226,13 +262,14 @@ function App() {
             setCommitCount((c) => c + 1);
             if (stateRef.current === "sleep") setState("idle");
             triggerReaction();
+            bumpMood(MOOD_COMMIT_BOOST);
             invoke("log_event", { kind: "commit" }).catch(() => {});
           }
         })
         .catch((e) => setGitError(String(e)));
     }, 3000);
     return () => clearInterval(id);
-  }, [triggerReaction]);
+  }, [triggerReaction, bumpMood]);
 
   // TEMPORARY (Faza 2 spike): poll SQLite row count so we can visually
   // confirm log_event writes are actually landing in the database.
@@ -273,6 +310,8 @@ function App() {
         {window.innerHeight}
         <br />
         db events: {dbEventCount ?? "?"}
+        <br />
+        mood: {mood} ({Math.round(moodScore)})
         {gitError && <div style={{ color: "#f55" }}>git xato: {gitError}</div>}
       </div>
     )}
@@ -284,7 +323,16 @@ function App() {
         top: pos.y,
         width: PET_SIZE,
         height: PET_SIZE,
-        background: state === "drag" ? "#ff5555" : asleep ? "#883333" : "red",
+        background:
+          state === "drag"
+            ? "#ff5555"
+            : asleep
+              ? "#883333"
+              : mood === "happy"
+                ? "#ff8a3d"
+                : mood === "grumpy"
+                  ? "#7a4040"
+                  : "red",
         borderRadius: 8,
         cursor: state === "drag" ? "grabbing" : "grab",
         opacity: asleep ? 0.6 : 1,
