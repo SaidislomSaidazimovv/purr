@@ -6,7 +6,7 @@ import "./App.css";
 const PET_SIZE = 80;
 const WALK_SPEED = 60; // px/second
 const FALL_SPEED = 900; // px/second^2
-const SLEEP_AFTER_MS = 15000; // idle this long with no interaction -> sleep
+const REAL_IDLE_SLEEP_SECONDS = 40 * 60; // system-wide idle this long -> sleep (Faza 2 gate)
 const CLICK_MAX_MOVE = 6; // px — below this, mouseup counts as a "click" not a drag
 const CLICK_MAX_MS = 300; // below this duration, same
 const REACTION_MS = 400;
@@ -28,12 +28,8 @@ function App() {
   const dragStart = useRef({ x: 0, y: 0, time: 0 });
   const walkTarget = useRef<number | null>(null);
   const fallVelocity = useRef(0);
-  const lastActivity = useRef(Date.now());
   const reactionTimeout = useRef<number | null>(null);
-
-  const markActivity = useCallback(() => {
-    lastActivity.current = Date.now();
-  }, []);
+  const systemIdleSeconds = useRef(0);
 
   // Physical screen bounds of the pet, reported to Rust for click-through hit-testing.
   const reportBounds = useCallback((x: number, y: number) => {
@@ -61,11 +57,22 @@ function App() {
   }, [pos, reportBounds]);
 
   // Idle/walk/sleep FSM: every couple of seconds, maybe wander to a nearby
-  // spot, or fall asleep after a long stretch with no interaction.
+  // spot, fall asleep once the user has been away from the whole PC for
+  // REAL_IDLE_SLEEP_SECONDS (not just away from the pet), or wake back up
+  // once real activity resumes.
   useEffect(() => {
     const id = setInterval(() => {
+      const idleSec = systemIdleSeconds.current;
+
+      if (stateRef.current === "sleep") {
+        if (idleSec < REAL_IDLE_SLEEP_SECONDS) {
+          setState("idle");
+        }
+        return;
+      }
+
       if (stateRef.current === "idle") {
-        if (Date.now() - lastActivity.current > SLEEP_AFTER_MS) {
+        if (idleSec >= REAL_IDLE_SLEEP_SECONDS) {
           setState("sleep");
           return;
         }
@@ -127,7 +134,6 @@ function App() {
   }, []);
 
   const onMouseDown = (e: React.MouseEvent) => {
-    markActivity();
     dragOffset.current = { x: e.clientX - posRef.current.x, y: e.clientY - posRef.current.y };
     dragStart.current = { x: e.clientX, y: e.clientY, time: Date.now() };
     walkTarget.current = null;
@@ -146,7 +152,6 @@ function App() {
     };
     const onUp = (e: MouseEvent) => {
       invoke("set_drag_active", { active: false }).catch(() => {});
-      markActivity();
 
       const movedDist = Math.hypot(
         e.clientX - dragStart.current.x,
@@ -167,7 +172,7 @@ function App() {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [state, markActivity, triggerReaction]);
+  }, [state, triggerReaction]);
 
   // TEMPORARY (Faza 2 spike): poll and display what the tracker sees, so we
   // can visually confirm it's correct before wiring it into the brain.
@@ -180,7 +185,11 @@ function App() {
   useEffect(() => {
     const id = setInterval(() => {
       invoke("get_activity_snapshot")
-        .then((snap) => setDebugSnapshot(snap as typeof debugSnapshot))
+        .then((snap) => {
+          const s = snap as typeof debugSnapshot;
+          setDebugSnapshot(s);
+          if (s) systemIdleSeconds.current = s.idle_seconds;
+        })
         .catch(() => {});
     }, 1500);
     return () => clearInterval(id);
@@ -201,14 +210,14 @@ function App() {
           setGitError(null);
           if (hit) {
             setCommitCount((c) => c + 1);
-            markActivity();
+            if (stateRef.current === "sleep") setState("idle");
             triggerReaction();
           }
         })
         .catch((e) => setGitError(String(e)));
     }, 3000);
     return () => clearInterval(id);
-  }, [markActivity, triggerReaction]);
+  }, [triggerReaction]);
 
   const asleep = state === "sleep";
 
@@ -231,6 +240,9 @@ function App() {
       >
         app: {debugSnapshot.process_name ?? "?"} | kategoriya: {debugSnapshot.category} | idle:{" "}
         {debugSnapshot.idle_seconds}s | commits: {commitCount}
+        <br />
+        pet pos: ({Math.round(pos.x)}, {Math.round(pos.y)}) | state: {state} | win: {window.innerWidth}x
+        {window.innerHeight}
         {gitError && <div style={{ color: "#f55" }}>git xato: {gitError}</div>}
       </div>
     )}
