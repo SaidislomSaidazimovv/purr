@@ -169,9 +169,68 @@ function App() {
     };
   }, [state, markActivity, triggerReaction]);
 
+  // TEMPORARY (Faza 2 spike): poll and display what the tracker sees, so we
+  // can visually confirm it's correct before wiring it into the brain.
+  const [debugSnapshot, setDebugSnapshot] = useState<{
+    process_name: string | null;
+    category: string;
+    idle_seconds: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      invoke("get_activity_snapshot")
+        .then((snap) => setDebugSnapshot(snap as typeof debugSnapshot))
+        .catch(() => {});
+    }, 1500);
+    return () => clearInterval(id);
+  }, []);
+
+  // TEMPORARY (Faza 2 spike): poll our own repo for new commits; react with
+  // the same click-bounce animation when one is detected. This is the real
+  // Faza 2 gate behavior ("commit qilsangiz pet sakraydi"), just watching a
+  // hardcoded path for now — repo picker comes later in Settings.
+  const REPO_PATH = "F:/Main and Private/PetApp";
+  const [commitCount, setCommitCount] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      invoke("check_new_commit", { repoPath: REPO_PATH })
+        .then((hit) => {
+          if (hit) {
+            setCommitCount((c) => c + 1);
+            markActivity();
+            triggerReaction();
+          }
+        })
+        .catch(() => {});
+    }, 3000);
+    return () => clearInterval(id);
+  }, [markActivity, triggerReaction]);
+
   const asleep = state === "sleep";
 
   return (
+    <>
+    {debugSnapshot && (
+      <div
+        style={{
+          position: "absolute",
+          left: 8,
+          top: 8,
+          padding: "6px 10px",
+          background: "rgba(0,0,0,0.7)",
+          color: "#0f0",
+          fontFamily: "monospace",
+          fontSize: 12,
+          borderRadius: 6,
+          pointerEvents: "none",
+        }}
+      >
+        app: {debugSnapshot.process_name ?? "?"} | kategoriya: {debugSnapshot.category} | idle:{" "}
+        {debugSnapshot.idle_seconds}s | commits: {commitCount}
+      </div>
+    )}
     <div
       onMouseDown={onMouseDown}
       style={{
@@ -188,6 +247,7 @@ function App() {
         transition: "transform 120ms ease-out, opacity 400ms ease, background 200ms ease",
       }}
     />
+    </>
   );
 }
 
