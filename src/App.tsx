@@ -192,18 +192,20 @@ function App() {
   // hardcoded path for now — repo picker comes later in Settings.
   const REPO_PATH = "F:/Main and Private/PetApp";
   const [commitCount, setCommitCount] = useState(0);
+  const [gitError, setGitError] = useState<string | null>(null);
 
   useEffect(() => {
     const id = setInterval(() => {
       invoke("check_new_commit", { repoPath: REPO_PATH })
         .then((hit) => {
+          setGitError(null);
           if (hit) {
             setCommitCount((c) => c + 1);
             markActivity();
             triggerReaction();
           }
         })
-        .catch(() => {});
+        .catch((e) => setGitError(String(e)));
     }, 3000);
     return () => clearInterval(id);
   }, [markActivity, triggerReaction]);
@@ -229,6 +231,7 @@ function App() {
       >
         app: {debugSnapshot.process_name ?? "?"} | kategoriya: {debugSnapshot.category} | idle:{" "}
         {debugSnapshot.idle_seconds}s | commits: {commitCount}
+        {gitError && <div style={{ color: "#f55" }}>git xato: {gitError}</div>}
       </div>
     )}
     <div
