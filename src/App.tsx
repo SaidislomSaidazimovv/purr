@@ -11,7 +11,14 @@ const CLICK_MAX_MOVE = 6; // px — below this, mouseup counts as a "click" not 
 const CLICK_MAX_MS = 300; // below this duration, same
 const REACTION_MS = 400;
 const BUBBLE_MS = 4500; // how long a spoken line stays visible
+const CHAT_BUBBLE_MS = 12000; // LLM replies are longer, give them more time on screen
 const LONG_FOCUS_MS = 2 * 60 * 60 * 1000; // continuous "code" time before the pet comments
+const DOUBLE_CLICK_MS = 400; // second click within this window opens chat instead of reacting
+
+const CHAT_SYSTEM_PROMPT =
+  "Sen Purr ismli, ekranda yashaydigan dangasa va kinoyali mushuksan. " +
+  "Javoblaring juda qisqa (1-2 gap), o'zbek tilida, kichik harflarda, oxirida nuqtasiz, " +
+  "tabiiy so'zlashuv uslubida bo'lsin. Hazil-mutoyibali va biroz kinoyali bo'l, lekin xafa qiluvchi bo'lma.";
 
 // Brain: a simple mood score nudged by tracked events, decaying back to
 // neutral over time. Mood in turn affects how the pet looks/moves — the
@@ -103,22 +110,108 @@ function App() {
   const [bubbleText, setBubbleText] = useState<string | null>(null);
   const bubbleTimeout = useRef<number | null>(null);
 
-  const sayPhrase = useCallback((trigger: string) => {
-    invoke("get_phrase", { trigger })
-      .then((phrase) => {
-        if (!phrase) return;
-        setBubbleText(phrase as string);
-        if (bubbleTimeout.current) window.clearTimeout(bubbleTimeout.current);
-        bubbleTimeout.current = window.setTimeout(() => setBubbleText(null), BUBBLE_MS);
-      })
-      .catch(() => {});
+  const sayRaw = useCallback((text: string, ms: number) => {
+    setBubbleText(text);
+    if (bubbleTimeout.current) window.clearTimeout(bubbleTimeout.current);
+    bubbleTimeout.current = window.setTimeout(() => setBubbleText(null), ms);
   }, []);
+
+  const sayPhrase = useCallback(
+    (trigger: string) => {
+      invoke("get_phrase", { trigger })
+        .then((phrase) => {
+          if (phrase) sayRaw(phrase as string, BUBBLE_MS);
+        })
+        .catch(() => {});
+    },
+    [sayRaw],
+  );
 
   // Gate: pet greets you shortly after the app starts.
   useEffect(() => {
     const t = window.setTimeout(() => sayPhrase("startup"), 800);
     return () => window.clearTimeout(t);
   }, [sayPhrase]);
+
+  // Faza 3: chat — double-click opens a text input, sent to the local LLM.
+  // The window is made fully click-through-disabled (like during drag)
+  // while the input is open, since only the pet's bounds are normally
+  // tracked for hit-testing.
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatText, setChatText] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
+  const lastClickTimeRef = useRef(0);
+
+  const openChat = useCallback(() => {
+    setChatOpen(true);
+    invoke("set_drag_active", { active: true }).catch(() => {});
+  }, []);
+
+  const closeChat = useCallback(() => {
+    setChatOpen(false);
+    invoke("set_drag_active", { active: false }).catch(() => {});
+  }, []);
+
+  // Spawning the sidecar only means the OS process exists — llama-server
+  // still takes a couple seconds to load the model before it's actually
+  // listening. Poll /health until it responds (or give up) instead of
+  // firing the chat request immediately and getting a race-condition dud.
+  const waitForLlmReady = useCallback((port: number, timeoutMs: number) => {
+    const start = Date.now();
+    const attempt = (): Promise<void> =>
+      fetch(`http://127.0.0.1:${port}/health`)
+        .then((res) => {
+          if (!res.ok) throw new Error("not ready");
+        })
+        .catch((e) => {
+          if (Date.now() - start > timeoutMs) throw e;
+          return new Promise((resolve) => window.setTimeout(resolve, 300)).then(attempt);
+        });
+    return attempt();
+  }, []);
+
+  const sendChatMessage = useCallback(
+    (message: string) => {
+      const trimmed = message.trim();
+      setChatText("");
+      closeChat();
+      if (!trimmed) return;
+
+      setChatBusy(true);
+      sayRaw("o'ylayapman...", 30000);
+
+      let llmPort = 0;
+      invoke("start_llm")
+        .then(() => invoke("get_llm_port"))
+        .then((port) => {
+          llmPort = port as number;
+          return waitForLlmReady(llmPort, 15000);
+        })
+        .then(() =>
+          fetch(`http://127.0.0.1:${llmPort}/v1/chat/completions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              messages: [
+                { role: "system", content: CHAT_SYSTEM_PROMPT },
+                { role: "user", content: trimmed },
+              ],
+              max_tokens: 120,
+              temperature: 0.8,
+            }),
+          }),
+        )
+        .then((res) => res.json())
+        .then((data) => {
+          const reply = data?.choices?.[0]?.message?.content?.trim();
+          sayRaw(reply || "javob topilmadi", CHAT_BUBBLE_MS);
+          invoke("log_event", { kind: "chat" }).catch(() => {});
+        })
+        .catch((e) => sayRaw(`xato: ${String(e)}`, CHAT_BUBBLE_MS))
+        .finally(() => setChatBusy(false));
+    },
+    [closeChat, sayRaw, waitForLlmReady],
+  );
 
   // Physical screen bounds of the pet, reported to Rust for click-through hit-testing.
   const reportBounds = useCallback((x: number, y: number) => {
@@ -269,17 +362,28 @@ function App() {
       });
     };
     const onUp = (e: MouseEvent) => {
-      invoke("set_drag_active", { active: false }).catch(() => {});
-
       const movedDist = Math.hypot(
         e.clientX - dragStart.current.x,
         e.clientY - dragStart.current.y,
       );
       const elapsed = Date.now() - dragStart.current.time;
       const wasClick = movedDist < CLICK_MAX_MOVE && elapsed < CLICK_MAX_MS;
+
+      let openingChat = false;
       if (wasClick) {
-        triggerReaction();
-        sayPhrase("click");
+        const now = Date.now();
+        if (now - lastClickTimeRef.current < DOUBLE_CLICK_MS) {
+          lastClickTimeRef.current = 0;
+          openingChat = true;
+          openChat();
+        } else {
+          lastClickTimeRef.current = now;
+          triggerReaction();
+          sayPhrase("click");
+        }
+      }
+      if (!openingChat) {
+        invoke("set_drag_active", { active: false }).catch(() => {});
       }
 
       const groundY = window.innerHeight - PET_SIZE;
@@ -293,7 +397,7 @@ function App() {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [state, triggerReaction, sayPhrase]);
+  }, [state, triggerReaction, sayPhrase, openChat]);
 
   // TEMPORARY (Faza 2 spike): poll and display what the tracker sees, so we
   // can visually confirm it's correct before wiring it into the brain.
@@ -511,6 +615,32 @@ function App() {
           }}
         />
       </div>
+    )}
+    {chatOpen && (
+      <input
+        autoFocus
+        disabled={chatBusy}
+        value={chatText}
+        onChange={(e) => setChatText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") sendChatMessage(chatText);
+          if (e.key === "Escape") closeChat();
+        }}
+        placeholder="pet bilan gaplash..."
+        style={{
+          position: "absolute",
+          left: pos.x + PET_SIZE / 2,
+          top: pos.y - 14,
+          transform: "translate(-50%, -100%)",
+          width: 200,
+          padding: "8px 12px",
+          borderRadius: 12,
+          border: "none",
+          fontSize: 13,
+          fontFamily: "sans-serif",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+        }}
+      />
     )}
     <div
       onMouseDown={onMouseDown}
