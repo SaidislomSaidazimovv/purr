@@ -1,0 +1,13 @@
+Cat sprite frames (idle/, walk/, fall/) sourced from:
+
+"Cat & Dog - Free Sprites" by the OpenGameArt.org contributor
+https://opengameart.org/content/cat-dog-free-sprites
+Original download: https://opengameart.org/sites/default/files/CatnDog.zip
+
+License: CC0 1.0 Universal (public domain) — no attribution legally
+required, but kept here for provenance. Free to use, modify, and
+redistribute, including in commercial products.
+
+Only the cat character's Idle, Walk, and Fall animation frames were
+used (renamed to 1.png, 2.png, ... in original frame order). The Dog
+character and the Dead/Hurt/Jump/Run/Slide animations were not used.
