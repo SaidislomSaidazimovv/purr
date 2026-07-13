@@ -1,6 +1,7 @@
 mod config;
 mod db;
 mod git;
+mod memcheck;
 mod rules;
 mod tracker;
 mod tray;
@@ -9,6 +10,7 @@ mod window;
 use config::{get_repo_path, load_or_init_config, ConfigState};
 use db::{get_event_count, log_event, open_db, DbState};
 use git::{check_new_commit, GitWatcherState};
+use memcheck::get_memory_status;
 use rules::{get_phrase, RulesState};
 use tauri::Manager;
 use tracker::get_activity_snapshot;
@@ -34,7 +36,8 @@ pub fn run() {
             log_event,
             get_event_count,
             get_repo_path,
-            get_phrase
+            get_phrase,
+            get_memory_status
         ])
         .setup(|app| {
             let handle = app.handle().clone();

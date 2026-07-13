@@ -400,6 +400,23 @@ function App() {
     return () => clearInterval(id);
   }, []);
 
+  // Faza 3: RAM status, checked before starting the (heavy) local LLM
+  // sidecar — this machine is frequently under 1GB free.
+  const [memStatus, setMemStatus] = useState<{
+    total_mb: number;
+    free_mb: number;
+    free_percent: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      invoke("get_memory_status")
+        .then((m) => setMemStatus(m as typeof memStatus))
+        .catch(() => {});
+    }, 3000);
+    return () => clearInterval(id);
+  }, []);
+
   const asleep = state === "sleep";
   const petColor =
     state === "drag"
@@ -440,6 +457,8 @@ function App() {
         mood: {mood} ({Math.round(moodScore)})
         <br />
         repo: {repoPath ?? "yuklanmoqda..."}
+        <br />
+        ram: {memStatus ? `${memStatus.free_mb} / ${memStatus.total_mb} MB (${memStatus.free_percent.toFixed(1)}%)` : "?"}
         {gitError && <div style={{ color: "#f55" }}>git xato: {gitError}</div>}
       </div>
     )}
