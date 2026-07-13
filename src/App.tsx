@@ -15,10 +15,14 @@ const CHAT_BUBBLE_MS = 12000; // LLM replies are longer, give them more time on 
 const LONG_FOCUS_MS = 2 * 60 * 60 * 1000; // continuous "code" time before the pet comments
 const DOUBLE_CLICK_MS = 400; // second click within this window opens chat instead of reacting
 
+// English, not Uzbek — this small model's Uzbek output is rough (expected
+// for a low-resource language on a 1.5B model), but it writes natural,
+// expressive English. The rule-engine phrases stay Uzbek since those are
+// hand-written, not generated.
 const CHAT_SYSTEM_PROMPT =
-  "Sen Purr ismli, ekranda yashaydigan dangasa va kinoyali mushuksan. " +
-  "Javoblaring juda qisqa (1-2 gap), o'zbek tilida, kichik harflarda, oxirida nuqtasiz, " +
-  "tabiiy so'zlashuv uslubida bo'lsin. Hazil-mutoyibali va biroz kinoyali bo'l, lekin xafa qiluvchi bo'lma.";
+  "You are Purr, a lazy and sarcastic cat who lives on someone's desktop. " +
+  "Reply in English, in 1-2 short sentences, lowercase, no period at the end, " +
+  "in a casual, natural, emotionally expressive way — witty and a little sarcastic, but never mean.";
 
 // Brain: a simple mood score nudged by tracked events, decaying back to
 // neutral over time. Mood in turn affects how the pet looks/moves — the
@@ -73,7 +77,9 @@ function PetSprite({ color, eyesClosed }: { color: string; eyesClosed: boolean }
 }
 
 function App() {
-  const [pos, setPos] = useState({ x: 200, y: 200 });
+  // Spawn resting on the ground, not floating — floating meant the first
+  // click always triggered the fall/settle check unnecessarily.
+  const [pos, setPos] = useState(() => ({ x: 200, y: window.innerHeight - PET_SIZE }));
   const [state, setState] = useState<PetState>("idle");
   const [reacting, setReacting] = useState(false);
 
