@@ -10,6 +10,7 @@ const REAL_IDLE_SLEEP_SECONDS = 40 * 60; // system-wide idle this long -> sleep 
 const CLICK_MAX_MOVE = 6; // px — below this, mouseup counts as a "click" not a drag
 const CLICK_MAX_MS = 300; // below this duration, same
 const REACTION_MS = 400;
+const BUBBLE_MS = 4500; // how long a spoken line stays visible
 
 // Brain: a simple mood score nudged by tracked events, decaying back to
 // neutral over time. Mood in turn affects how the pet looks/moves — the
@@ -59,6 +60,28 @@ function App() {
     setMoodScore((m) => Math.max(-MOOD_CLAMP, Math.min(MOOD_CLAMP, m + delta)));
   }, []);
 
+  // Faza 3: rule engine — asks Rust for a line matching the trigger and
+  // shows it in a speech bubble for a few seconds.
+  const [bubbleText, setBubbleText] = useState<string | null>(null);
+  const bubbleTimeout = useRef<number | null>(null);
+
+  const sayPhrase = useCallback((trigger: string) => {
+    invoke("get_phrase", { trigger })
+      .then((phrase) => {
+        if (!phrase) return;
+        setBubbleText(phrase as string);
+        if (bubbleTimeout.current) window.clearTimeout(bubbleTimeout.current);
+        bubbleTimeout.current = window.setTimeout(() => setBubbleText(null), BUBBLE_MS);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Gate: pet greets you shortly after the app starts.
+  useEffect(() => {
+    const t = window.setTimeout(() => sayPhrase("startup"), 800);
+    return () => window.clearTimeout(t);
+  }, [sayPhrase]);
+
   // Physical screen bounds of the pet, reported to Rust for click-through hit-testing.
   const reportBounds = useCallback((x: number, y: number) => {
     const scale = window.devicePixelRatio || 1;
@@ -106,6 +129,7 @@ function App() {
         if (idleSec >= REAL_IDLE_SLEEP_SECONDS) {
           setState("sleep");
           invoke("log_event", { kind: "sleep_start", idleSeconds: idleSec }).catch(() => {});
+          sayPhrase("long_idle");
           return;
         }
         // A happy pet wanders more often; a grumpy (lazy, sulking) one stays put.
@@ -120,7 +144,7 @@ function App() {
       }
     }, 2500);
     return () => clearInterval(id);
-  }, []);
+  }, [sayPhrase]);
 
   // Animation loop: drives walking and falling.
   useEffect(() => {
@@ -197,7 +221,10 @@ function App() {
       );
       const elapsed = Date.now() - dragStart.current.time;
       const wasClick = movedDist < CLICK_MAX_MOVE && elapsed < CLICK_MAX_MS;
-      if (wasClick) triggerReaction();
+      if (wasClick) {
+        triggerReaction();
+        sayPhrase("click");
+      }
 
       const groundY = window.innerHeight - PET_SIZE;
       fallVelocity.current = 0;
@@ -210,7 +237,7 @@ function App() {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [state, triggerReaction]);
+  }, [state, triggerReaction, sayPhrase]);
 
   // TEMPORARY (Faza 2 spike): poll and display what the tracker sees, so we
   // can visually confirm it's correct before wiring it into the brain.
@@ -271,13 +298,14 @@ function App() {
             if (stateRef.current === "sleep") setState("idle");
             triggerReaction();
             bumpMood(MOOD_COMMIT_BOOST);
+            sayPhrase("commit");
             invoke("log_event", { kind: "commit" }).catch(() => {});
           }
         })
         .catch((e) => setGitError(String(e)));
     }, 3000);
     return () => clearInterval(id);
-  }, [repoPath, triggerReaction, bumpMood]);
+  }, [repoPath, triggerReaction, bumpMood, sayPhrase]);
 
   // TEMPORARY (Faza 2 spike): poll SQLite row count so we can visually
   // confirm log_event writes are actually landing in the database.
@@ -323,6 +351,41 @@ function App() {
         <br />
         repo: {repoPath ?? "yuklanmoqda..."}
         {gitError && <div style={{ color: "#f55" }}>git xato: {gitError}</div>}
+      </div>
+    )}
+    {bubbleText && (
+      <div
+        style={{
+          position: "absolute",
+          left: pos.x + PET_SIZE / 2,
+          top: pos.y - 14,
+          transform: "translate(-50%, -100%)",
+          maxWidth: 220,
+          background: "#fff",
+          color: "#222",
+          padding: "8px 12px",
+          borderRadius: 12,
+          fontSize: 13,
+          lineHeight: 1.3,
+          fontFamily: "sans-serif",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+          pointerEvents: "none",
+        }}
+      >
+        {bubbleText}
+        <div
+          style={{
+            position: "absolute",
+            bottom: -6,
+            left: "50%",
+            transform: "translateX(-50%)",
+            width: 0,
+            height: 0,
+            borderLeft: "6px solid transparent",
+            borderRight: "6px solid transparent",
+            borderTop: "6px solid #fff",
+          }}
+        />
       </div>
     )}
     <div
