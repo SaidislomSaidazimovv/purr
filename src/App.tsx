@@ -39,40 +39,33 @@ const MOOD_GRUMPY_THRESHOLD = -30;
 type PetState = "idle" | "walk" | "drag" | "fall" | "sleep";
 type Mood = "happy" | "neutral" | "grumpy";
 
-// A simple flat-design sitting cat, standing in for a real pixel-art sprite
-// until Faza 4's art pass. Fur color is passed in so the existing
-// state/mood color-coding (drag/asleep/happy/grumpy) keeps working exactly
-// as before — this only changes the shape, not the signal.
-function PetSprite({ color, eyesClosed }: { color: string; eyesClosed: boolean }) {
+// CC0 sprite frames (public/sprites/cat/) — see ATTRIBUTION.txt there.
+// Only idle/walk/fall exist as real animations; drag and sleep reuse the
+// idle pose (sleep freezes on frame 1 and dims via CSS filter instead of
+// animating, to read as "still" rather than "active").
+const SPRITE_FRAME_COUNTS = { idle: 10, walk: 10, fall: 8 } as const;
+type SpriteAnim = keyof typeof SPRITE_FRAME_COUNTS;
+const SPRITE_FRAME_MS = 120;
+
+function PetSprite({ anim, still, filterCss }: { anim: SpriteAnim; still: boolean; filterCss: string }) {
+  const [frame, setFrame] = useState(0);
+
+  useEffect(() => {
+    setFrame(0);
+    if (still) return;
+    const id = setInterval(() => {
+      setFrame((f) => (f + 1) % SPRITE_FRAME_COUNTS[anim]);
+    }, SPRITE_FRAME_MS);
+    return () => clearInterval(id);
+  }, [anim, still]);
+
+  const frameNum = (still ? 0 : frame % SPRITE_FRAME_COUNTS[anim]) + 1;
   return (
-    <svg viewBox="0 0 64 64" width="100%" height="100%">
-      <path
-        d="M 14 58 Q 10 40 14 30 Q 8 22 12 14 Q 20 4 26 14 Q 32 8 38 14 Q 44 4 52 14 Q 56 22 50 30 Q 54 40 50 58 Z"
-        fill={color}
-      />
-      <ellipse cx="32" cy="48" rx="11" ry="9" fill="#fff2df" opacity={0.85} />
-      {eyesClosed ? (
-        <>
-          <path d="M 22 27 Q 26 30 30 27" stroke="#1a1a1a" strokeWidth="2" fill="none" strokeLinecap="round" />
-          <path d="M 34 27 Q 38 30 42 27" stroke="#1a1a1a" strokeWidth="2" fill="none" strokeLinecap="round" />
-        </>
-      ) : (
-        <>
-          <ellipse cx="25" cy="27" rx="2.4" ry="3" fill="#1a1a1a" />
-          <ellipse cx="39" cy="27" rx="2.4" ry="3" fill="#1a1a1a" />
-        </>
-      )}
-      <path d="M 30 32 L 34 32 L 32 35 Z" fill="#ff9fb0" />
-      <path
-        d="M 32 35 Q 29 39 26 36 M 32 35 Q 35 39 38 36"
-        stroke="#1a1a1a"
-        strokeWidth="1.5"
-        fill="none"
-        strokeLinecap="round"
-      />
-      <ellipse cx="22" cy="56" rx="5" ry="4" fill="#fff2df" opacity={0.85} />
-      <ellipse cx="42" cy="56" rx="5" ry="4" fill="#fff2df" opacity={0.85} />
-    </svg>
+    <img
+      src={`/sprites/cat/${anim}/${frameNum}.png`}
+      draggable={false}
+      style={{ width: "100%", height: "100%", objectFit: "contain", filter: filterCss }}
+    />
   );
 }
 
@@ -541,16 +534,17 @@ function App() {
   }, []);
 
   const asleep = state === "sleep";
-  const petColor =
+  const spriteAnim: SpriteAnim = state === "walk" ? "walk" : state === "fall" ? "fall" : "idle";
+  const spriteFilter =
     state === "drag"
-      ? "#ff5555"
+      ? "brightness(1.15)"
       : asleep
-        ? "#883333"
+        ? "brightness(0.6) saturate(0.7)"
         : mood === "happy"
-          ? "#ff8a3d"
+          ? "brightness(1.1) saturate(1.3)"
           : mood === "grumpy"
-            ? "#7a4040"
-            : "#e6482e";
+            ? "brightness(0.75) saturate(0.6)"
+            : "none";
 
   return (
     <>
@@ -662,7 +656,7 @@ function App() {
         transition: "transform 120ms ease-out, opacity 400ms ease, filter 200ms ease",
       }}
     >
-      <PetSprite color={petColor} eyesClosed={asleep} />
+      <PetSprite anim={spriteAnim} still={asleep} filterCss={spriteFilter} />
     </div>
     </>
   );
