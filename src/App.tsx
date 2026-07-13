@@ -147,6 +147,24 @@ function App() {
     return () => clearInterval(id);
   }, [sayPhrase]);
 
+  // Faza 3 Gate: the pet speaks entirely on its own right after midnight,
+  // once per day — no click, commit, or other interaction required.
+  const lastMidnightDateRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      const now = new Date();
+      if (now.getHours() === 0 && now.getMinutes() === 0) {
+        const today = now.toDateString();
+        if (lastMidnightDateRef.current !== today) {
+          lastMidnightDateRef.current = today;
+          sayPhrase("midnight");
+        }
+      }
+    }, 20000);
+    return () => clearInterval(id);
+  }, [sayPhrase]);
+
   // Animation loop: drives walking and falling.
   useEffect(() => {
     let raf: number;
