@@ -178,7 +178,7 @@ function App() {
       if (!trimmed) return;
 
       setChatBusy(true);
-      sayRaw("o'ylayapman...", 30000);
+      sayRaw("thinking...", 30000);
 
       let llmPort = 0;
       invoke("start_llm")
@@ -204,10 +204,10 @@ function App() {
         .then((res) => res.json())
         .then((data) => {
           const reply = data?.choices?.[0]?.message?.content?.trim();
-          sayRaw(reply || "javob topilmadi", CHAT_BUBBLE_MS);
+          sayRaw(reply || "no answer came through", CHAT_BUBBLE_MS);
           invoke("log_event", { kind: "chat" }).catch(() => {});
         })
-        .catch((e) => sayRaw(`xato: ${String(e)}`, CHAT_BUBBLE_MS))
+        .catch((e) => sayRaw(`error: ${String(e)}`, CHAT_BUBBLE_MS))
         .finally(() => setChatBusy(false));
     },
     [closeChat, sayRaw, waitForLlmReady],
@@ -630,7 +630,7 @@ function App() {
           if (e.key === "Enter") sendChatMessage(chatText);
           if (e.key === "Escape") closeChat();
         }}
-        placeholder="pet bilan gaplash..."
+        placeholder="talk to your pet..."
         style={{
           position: "absolute",
           left: pos.x + PET_SIZE / 2,
