@@ -19,4 +19,4 @@ npm run tauri dev
 
 ## Status
 
-Early development — core overlay mechanics (click-through, drag, walk/sleep FSM, tray icon) are working. Purr also now senses your foreground app, system idle time, and git commits, logs them to SQLite, and reacts with a simple mood that shifts its color and movement. Pixel-art sprite and productivity-aware AI chat are next.
+Early development — core overlay mechanics (click-through, drag, walk/sleep FSM, tray icon) are working. Purr also now senses your foreground app, system idle time, and git commits, logs them to SQLite, and reacts with a simple mood that shifts its color and movement. Work has started on Purr actually speaking (rule-based lines in a chat bubble); local LLM chat and a pixel-art sprite are next.
