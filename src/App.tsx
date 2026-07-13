@@ -74,6 +74,7 @@ function App() {
   // click always triggered the fall/settle check unnecessarily.
   const [pos, setPos] = useState(() => ({ x: 200, y: window.innerHeight - PET_SIZE }));
   const [state, setState] = useState<PetState>("idle");
+  const [facing, setFacing] = useState<"left" | "right">("right");
   const [reacting, setReacting] = useState(false);
 
   const posRef = useRef(pos);
@@ -269,6 +270,7 @@ function App() {
         const groundWidth = window.innerWidth - PET_SIZE;
         const delta = (Math.random() - 0.5) * 300;
         const target = Math.max(0, Math.min(groundWidth, posRef.current.x + delta));
+        setFacing(delta >= 0 ? "right" : "left");
         walkTarget.current = target;
         setState("walk");
       }
@@ -355,6 +357,8 @@ function App() {
     const onMove = (e: MouseEvent) => {
       const maxX = window.innerWidth - PET_SIZE;
       const maxY = window.innerHeight - PET_SIZE;
+      if (e.movementX > 0) setFacing("right");
+      else if (e.movementX < 0) setFacing("left");
       setPos({
         x: Math.max(0, Math.min(maxX, e.clientX - dragOffset.current.x)),
         y: Math.max(0, Math.min(maxY, e.clientY - dragOffset.current.y)),
@@ -652,7 +656,7 @@ function App() {
         height: PET_SIZE,
         cursor: state === "drag" ? "grabbing" : "grab",
         opacity: asleep ? 0.6 : 1,
-        transform: reacting ? "scale(1.15)" : "scale(1)",
+        transform: `${facing === "left" ? "scaleX(-1) " : ""}${reacting ? "scale(1.15)" : "scale(1)"}`,
         transition: "transform 120ms ease-out, opacity 400ms ease, filter 200ms ease",
       }}
     >
