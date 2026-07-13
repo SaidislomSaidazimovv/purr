@@ -28,6 +28,43 @@ const MOOD_GRUMPY_THRESHOLD = -30;
 type PetState = "idle" | "walk" | "drag" | "fall" | "sleep";
 type Mood = "happy" | "neutral" | "grumpy";
 
+// A simple flat-design sitting cat, standing in for a real pixel-art sprite
+// until Faza 4's art pass. Fur color is passed in so the existing
+// state/mood color-coding (drag/asleep/happy/grumpy) keeps working exactly
+// as before — this only changes the shape, not the signal.
+function PetSprite({ color, eyesClosed }: { color: string; eyesClosed: boolean }) {
+  return (
+    <svg viewBox="0 0 64 64" width="100%" height="100%">
+      <path
+        d="M 14 58 Q 10 40 14 30 Q 8 22 12 14 Q 20 4 26 14 Q 32 8 38 14 Q 44 4 52 14 Q 56 22 50 30 Q 54 40 50 58 Z"
+        fill={color}
+      />
+      <ellipse cx="32" cy="48" rx="11" ry="9" fill="#fff2df" opacity={0.85} />
+      {eyesClosed ? (
+        <>
+          <path d="M 22 27 Q 26 30 30 27" stroke="#1a1a1a" strokeWidth="2" fill="none" strokeLinecap="round" />
+          <path d="M 34 27 Q 38 30 42 27" stroke="#1a1a1a" strokeWidth="2" fill="none" strokeLinecap="round" />
+        </>
+      ) : (
+        <>
+          <ellipse cx="25" cy="27" rx="2.4" ry="3" fill="#1a1a1a" />
+          <ellipse cx="39" cy="27" rx="2.4" ry="3" fill="#1a1a1a" />
+        </>
+      )}
+      <path d="M 30 32 L 34 32 L 32 35 Z" fill="#ff9fb0" />
+      <path
+        d="M 32 35 Q 29 39 26 36 M 32 35 Q 35 39 38 36"
+        stroke="#1a1a1a"
+        strokeWidth="1.5"
+        fill="none"
+        strokeLinecap="round"
+      />
+      <ellipse cx="22" cy="56" rx="5" ry="4" fill="#fff2df" opacity={0.85} />
+      <ellipse cx="42" cy="56" rx="5" ry="4" fill="#fff2df" opacity={0.85} />
+    </svg>
+  );
+}
+
 function App() {
   const [pos, setPos] = useState({ x: 200, y: 200 });
   const [state, setState] = useState<PetState>("idle");
@@ -364,6 +401,16 @@ function App() {
   }, []);
 
   const asleep = state === "sleep";
+  const petColor =
+    state === "drag"
+      ? "#ff5555"
+      : asleep
+        ? "#883333"
+        : mood === "happy"
+          ? "#ff8a3d"
+          : mood === "grumpy"
+            ? "#7a4040"
+            : "#e6482e";
 
   return (
     <>
@@ -439,23 +486,14 @@ function App() {
         top: pos.y,
         width: PET_SIZE,
         height: PET_SIZE,
-        background:
-          state === "drag"
-            ? "#ff5555"
-            : asleep
-              ? "#883333"
-              : mood === "happy"
-                ? "#ff8a3d"
-                : mood === "grumpy"
-                  ? "#7a4040"
-                  : "red",
-        borderRadius: 8,
         cursor: state === "drag" ? "grabbing" : "grab",
         opacity: asleep ? 0.6 : 1,
         transform: reacting ? "scale(1.15)" : "scale(1)",
-        transition: "transform 120ms ease-out, opacity 400ms ease, background 200ms ease",
+        transition: "transform 120ms ease-out, opacity 400ms ease, filter 200ms ease",
       }}
-    />
+    >
+      <PetSprite color={petColor} eyesClosed={asleep} />
+    </div>
     </>
   );
 }
