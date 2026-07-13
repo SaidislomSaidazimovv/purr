@@ -247,17 +247,23 @@ function App() {
     return () => clearInterval(id);
   }, [bumpMood]);
 
-  // TEMPORARY (Faza 2 spike): poll our own repo for new commits; react with
-  // the same click-bounce animation when one is detected. This is the real
-  // Faza 2 gate behavior ("commit qilsangiz pet sakraydi"), just watching a
-  // hardcoded path for now — repo picker comes later in Settings.
-  const REPO_PATH = "F:/Main and Private/PetApp";
+  // Repo watched for commits — read from config.json (app data dir), created
+  // with a sensible default on first run. Editing that file changes which
+  // repo the pet reacts to; a real picker UI comes later in Faza 4 Settings.
+  const [repoPath, setRepoPath] = useState<string | null>(null);
   const [commitCount, setCommitCount] = useState(0);
   const [gitError, setGitError] = useState<string | null>(null);
 
   useEffect(() => {
+    invoke("get_repo_path")
+      .then((p) => setRepoPath(p as string))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!repoPath) return;
     const id = setInterval(() => {
-      invoke("check_new_commit", { repoPath: REPO_PATH })
+      invoke("check_new_commit", { repoPath })
         .then((hit) => {
           setGitError(null);
           if (hit) {
@@ -271,7 +277,7 @@ function App() {
         .catch((e) => setGitError(String(e)));
     }, 3000);
     return () => clearInterval(id);
-  }, [triggerReaction, bumpMood]);
+  }, [repoPath, triggerReaction, bumpMood]);
 
   // TEMPORARY (Faza 2 spike): poll SQLite row count so we can visually
   // confirm log_event writes are actually landing in the database.
@@ -314,6 +320,8 @@ function App() {
         db events: {dbEventCount ?? "?"}
         <br />
         mood: {mood} ({Math.round(moodScore)})
+        <br />
+        repo: {repoPath ?? "yuklanmoqda..."}
         {gitError && <div style={{ color: "#f55" }}>git xato: {gitError}</div>}
       </div>
     )}

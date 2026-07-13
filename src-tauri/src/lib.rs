@@ -1,9 +1,11 @@
+mod config;
 mod db;
 mod git;
 mod tracker;
 mod tray;
 mod window;
 
+use config::{get_repo_path, load_or_init_config, ConfigState};
 use db::{get_event_count, log_event, open_db, DbState};
 use git::{check_new_commit, GitWatcherState};
 use tauri::Manager;
@@ -27,7 +29,8 @@ pub fn run() {
             get_activity_snapshot,
             check_new_commit,
             log_event,
-            get_event_count
+            get_event_count,
+            get_repo_path
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -36,6 +39,8 @@ pub fn run() {
             setup_tray(&handle)?;
             let conn = open_db(&handle).expect("failed to open sqlite db");
             app.manage(DbState(std::sync::Mutex::new(conn)));
+            let cfg = load_or_init_config(&handle);
+            app.manage(ConfigState(cfg));
             Ok(())
         })
         .run(tauri::generate_context!())
