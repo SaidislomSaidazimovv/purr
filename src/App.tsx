@@ -11,6 +11,7 @@ const CLICK_MAX_MOVE = 6; // px — below this, mouseup counts as a "click" not 
 const CLICK_MAX_MS = 300; // below this duration, same
 const REACTION_MS = 400;
 const BUBBLE_MS = 4500; // how long a spoken line stays visible
+const LONG_FOCUS_MS = 2 * 60 * 60 * 1000; // continuous "code" time before the pet comments
 
 // Brain: a simple mood score nudged by tracked events, decaying back to
 // neutral over time. Mood in turn affects how the pet looks/moves — the
@@ -249,6 +250,12 @@ function App() {
 
   const lastLoggedCategory = useRef<string | null>(null);
 
+  // Tracks how long the "code" category has been continuously active, for
+  // the long_focus trigger — reset whenever the category changes away from
+  // "code", and only fires once per continuous stretch.
+  const codeFocusStartRef = useRef<number | null>(null);
+  const longFocusNotifiedRef = useRef(false);
+
   useEffect(() => {
     const id = setInterval(() => {
       invoke("get_activity_snapshot")
@@ -266,13 +273,31 @@ function App() {
               }).catch(() => {});
               if (s.category === "code") bumpMood(MOOD_CODE_BOOST);
               else if (s.category === "game") bumpMood(-MOOD_GAME_PENALTY);
+
+              if (s.category === "code") {
+                codeFocusStartRef.current = Date.now();
+                longFocusNotifiedRef.current = false;
+              } else {
+                codeFocusStartRef.current = null;
+                longFocusNotifiedRef.current = false;
+              }
+            }
+
+            if (
+              s.category === "code" &&
+              codeFocusStartRef.current !== null &&
+              !longFocusNotifiedRef.current &&
+              Date.now() - codeFocusStartRef.current >= LONG_FOCUS_MS
+            ) {
+              longFocusNotifiedRef.current = true;
+              sayPhrase("long_focus");
             }
           }
         })
         .catch(() => {});
     }, 1500);
     return () => clearInterval(id);
-  }, [bumpMood]);
+  }, [bumpMood, sayPhrase]);
 
   // Repo watched for commits — read from config.json (app data dir), created
   // with a sensible default on first run. Editing that file changes which
