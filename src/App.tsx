@@ -152,6 +152,20 @@ function App() {
     invoke("set_drag_active", { active: false }).catch(() => {});
   }, []);
 
+  // While chat is open the whole window is fully interactive (not just the
+  // pet's bounds), so a click that lands outside the input can steal focus
+  // from it — leaving Escape's onKeyDown on the input unreachable and the
+  // chat stuck open. Listen at the window level instead so Escape always
+  // works regardless of what currently has focus.
+  useEffect(() => {
+    if (!chatOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeChat();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [chatOpen, closeChat]);
+
   // Spawning the sidecar only means the OS process exists — llama-server
   // still takes a couple seconds to load the model before it's actually
   // listening. Poll /health until it responds (or give up) instead of
@@ -619,6 +633,15 @@ function App() {
           }}
         />
       </div>
+    )}
+    {chatOpen && (
+      <div
+        onMouseDown={closeChat}
+        style={{
+          position: "fixed",
+          inset: 0,
+        }}
+      />
     )}
     {chatOpen && (
       <input
