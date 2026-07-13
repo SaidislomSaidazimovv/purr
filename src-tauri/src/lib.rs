@@ -1,6 +1,7 @@
 mod config;
 mod db;
 mod git;
+mod llm;
 mod memcheck;
 mod rules;
 mod tracker;
@@ -10,6 +11,7 @@ mod window;
 use config::{get_repo_path, load_or_init_config, ConfigState};
 use db::{get_event_count, log_event, open_db, DbState};
 use git::{check_new_commit, GitWatcherState};
+use llm::{get_llm_port, kill_on_exit, llm_status, start_llm, stop_llm, LlmState};
 use memcheck::get_memory_status;
 use rules::{get_phrase, RulesState};
 use tauri::Manager;
@@ -28,6 +30,7 @@ pub fn run() {
         .manage(DragActiveState(Default::default()))
         .manage(GitWatcherState(Default::default()))
         .manage(RulesState(Default::default()))
+        .manage(LlmState(Default::default()))
         .invoke_handler(tauri::generate_handler![
             update_pet_bounds,
             set_drag_active,
@@ -37,7 +40,11 @@ pub fn run() {
             get_event_count,
             get_repo_path,
             get_phrase,
-            get_memory_status
+            get_memory_status,
+            get_llm_port,
+            llm_status,
+            start_llm,
+            stop_llm
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -50,6 +57,13 @@ pub fn run() {
             app.manage(ConfigState(cfg));
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                if let Some(state) = app_handle.try_state::<LlmState>() {
+                    kill_on_exit(&state);
+                }
+            }
+        });
 }

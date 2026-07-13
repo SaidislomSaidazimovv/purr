@@ -417,6 +417,19 @@ function App() {
     return () => clearInterval(id);
   }, []);
 
+  // LLM sidecar is started on demand (from the chat input, Faza 3 next
+  // step) rather than on every launch — this machine can't always spare
+  // the RAM. This just polls status for the debug overlay.
+  const [llmRunning, setLlmRunning] = useState(false);
+  useEffect(() => {
+    const id = setInterval(() => {
+      invoke("llm_status")
+        .then((s) => setLlmRunning(s as boolean))
+        .catch(() => {});
+    }, 2000);
+    return () => clearInterval(id);
+  }, []);
+
   const asleep = state === "sleep";
   const petColor =
     state === "drag"
@@ -459,6 +472,8 @@ function App() {
         repo: {repoPath ?? "yuklanmoqda..."}
         <br />
         ram: {memStatus ? `${memStatus.free_mb} / ${memStatus.total_mb} MB (${memStatus.free_percent.toFixed(1)}%)` : "?"}
+        <br />
+        llm: {llmRunning ? "ishlayapti" : "to'xtatilgan"}
         {gitError && <div style={{ color: "#f55" }}>git xato: {gitError}</div>}
       </div>
     )}
