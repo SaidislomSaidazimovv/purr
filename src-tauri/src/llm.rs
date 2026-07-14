@@ -2,6 +2,8 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 
+use tauri::Manager;
+
 use crate::memcheck::get_memory_status;
 
 /// Fixed local port for the llama-server sidecar. Chosen away from Vite's
@@ -15,15 +17,35 @@ const MIN_FREE_MB_TO_START: u64 = 1200;
 
 pub struct LlmState(pub Mutex<Option<Child>>);
 
-// Dev-only path resolution: binaries/ and models/ live at the project root,
-// one level up from src-tauri/. Revisit for Faza 4, when the model and
-// server binary get bundled into the installer instead.
-fn server_exe_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../binaries/extracted/llama-server.exe")
+// Resolves against the bundled `resources` (see tauri.conf.json ->
+// bundle.resources) when running as an installed app, since a packaged
+// build has no `CARGO_MANIFEST_DIR` project tree to find these in.
+// `tauri dev` doesn't copy resources, so it falls back to the project's
+// binaries/models folders one level up from src-tauri/.
+fn resolve_resource(app: &tauri::AppHandle, bundled_rel: &str, dev_rel: &str) -> PathBuf {
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let bundled = resource_dir.join(bundled_rel);
+        if bundled.exists() {
+            return bundled;
+        }
+    }
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(dev_rel)
 }
 
-fn model_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../models/qwen2.5-1.5b-instruct-q4_k_m.gguf")
+fn server_exe_path(app: &tauri::AppHandle) -> PathBuf {
+    resolve_resource(
+        app,
+        "binaries/llama-server.exe",
+        "../binaries/extracted/llama-server.exe",
+    )
+}
+
+fn model_path(app: &tauri::AppHandle) -> PathBuf {
+    resolve_resource(
+        app,
+        "models/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+        "../models/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+    )
 }
 
 #[tauri::command]
@@ -47,7 +69,7 @@ pub fn llm_status(state: tauri::State<LlmState>) -> bool {
 }
 
 #[tauri::command]
-pub fn start_llm(state: tauri::State<LlmState>) -> Result<String, String> {
+pub fn start_llm(app: tauri::AppHandle, state: tauri::State<LlmState>) -> Result<String, String> {
     let mut guard = state.0.lock().unwrap();
 
     if let Some(child) = guard.as_mut() {
@@ -64,8 +86,8 @@ pub fn start_llm(state: tauri::State<LlmState>) -> Result<String, String> {
         ));
     }
 
-    let exe = server_exe_path();
-    let model = model_path();
+    let exe = server_exe_path(&app);
+    let model = model_path(&app);
     if !exe.exists() {
         return Err(format!("llama-server topilmadi: {}", exe.display()));
     }
