@@ -1,14 +1,15 @@
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Manager,
+    AppHandle, Emitter, Manager,
 };
 
-/// Builds the system tray icon with a simple show/hide + quit menu.
+/// Builds the system tray icon with show/hide + settings + quit menu.
 pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "Ko'rsat / Yashir", true, None::<&str>)?;
+    let settings = MenuItem::with_id(app, "settings", "Advanced sozlamalar", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Chiqish", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &settings, &quit])?;
 
     TrayIconBuilder::new()
         .icon(app.default_window_icon().cloned().unwrap())
@@ -20,6 +21,12 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                     let visible = window.is_visible().unwrap_or(true);
                     let _ = if visible { window.hide() } else { window.show() };
                 }
+            }
+            "settings" => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                }
+                let _ = app.emit("open-settings", ());
             }
             "quit" => app.exit(0),
             _ => {}

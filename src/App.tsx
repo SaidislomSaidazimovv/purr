@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 import "./App.css";
 
 const PET_SIZE = 80;
@@ -184,6 +185,88 @@ function App() {
     return attempt();
   }, []);
 
+  // Advanced settings (repo path + optional cloud AI key). Faza 4 will
+  // replace this with a real Settings window; for now a tray menu item
+  // ("Advanced sozlamalar") opens this same overlay-panel pattern as chat.
+  const [repoPath, setRepoPath] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [repoPathInput, setRepoPathInput] = useState("");
+  const [cloudKeyInput, setCloudKeyInput] = useState("");
+  const [cloudKeySet, setCloudKeySet] = useState(false);
+  const [settingsStatus, setSettingsStatus] = useState("");
+
+  const refreshCloudKeyStatus = useCallback(() => {
+    invoke("has_cloud_api_key")
+      .then((set) => setCloudKeySet(Boolean(set)))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    refreshCloudKeyStatus();
+  }, [refreshCloudKeyStatus]);
+
+  const openSettings = useCallback(() => {
+    setRepoPathInput(repoPath ?? "");
+    setCloudKeyInput("");
+    setSettingsStatus("");
+    refreshCloudKeyStatus();
+    setSettingsOpen(true);
+    invoke("set_drag_active", { active: true }).catch(() => {});
+  }, [repoPath, refreshCloudKeyStatus]);
+
+  const closeSettings = useCallback(() => {
+    setSettingsOpen(false);
+    invoke("set_drag_active", { active: false }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const unlisten = listen("open-settings", () => openSettings());
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, [openSettings]);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeSettings();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [settingsOpen, closeSettings]);
+
+  const saveRepoPath = useCallback(() => {
+    const trimmed = repoPathInput.trim();
+    if (!trimmed) return;
+    invoke("set_repo_path", { repoPath: trimmed })
+      .then(() => {
+        setRepoPath(trimmed);
+        setSettingsStatus("repo yo'li saqlandi");
+      })
+      .catch((e) => setSettingsStatus(`xato: ${String(e)}`));
+  }, [repoPathInput]);
+
+  const saveCloudKey = useCallback(() => {
+    const trimmed = cloudKeyInput.trim();
+    if (!trimmed) return;
+    invoke("set_cloud_api_key", { key: trimmed })
+      .then(() => {
+        setCloudKeyInput("");
+        setSettingsStatus("cloud AI key saqlandi");
+        refreshCloudKeyStatus();
+      })
+      .catch((e) => setSettingsStatus(`xato: ${String(e)}`));
+  }, [cloudKeyInput, refreshCloudKeyStatus]);
+
+  const removeCloudKey = useCallback(() => {
+    invoke("clear_cloud_api_key")
+      .then(() => {
+        setSettingsStatus("cloud AI key o'chirildi");
+        refreshCloudKeyStatus();
+      })
+      .catch((e) => setSettingsStatus(`xato: ${String(e)}`));
+  }, [refreshCloudKeyStatus]);
+
   const sendChatMessage = useCallback(
     (message: string) => {
       const trimmed = message.trim();
@@ -193,6 +276,20 @@ function App() {
 
       setChatBusy(true);
       sayRaw("thinking...", 30000);
+
+      // Cloud AI (user's own key, set in Advanced settings) takes priority
+      // over the local model when configured — better reply quality, no
+      // RAM cost. Falls through to local llama-server otherwise.
+      if (cloudKeySet) {
+        invoke("send_cloud_chat", { message: trimmed })
+          .then((reply) => {
+            sayRaw((reply as string) || "no answer came through", CHAT_BUBBLE_MS);
+            invoke("log_event", { kind: "chat" }).catch(() => {});
+          })
+          .catch((e) => sayRaw(`error: ${String(e)}`, CHAT_BUBBLE_MS))
+          .finally(() => setChatBusy(false));
+        return;
+      }
 
       let llmPort = 0;
       invoke("start_llm")
@@ -224,7 +321,7 @@ function App() {
         .catch((e) => sayRaw(`error: ${String(e)}`, CHAT_BUBBLE_MS))
         .finally(() => setChatBusy(false));
     },
-    [closeChat, sayRaw, waitForLlmReady],
+    [closeChat, sayRaw, waitForLlmReady, cloudKeySet],
   );
 
   // Physical screen bounds of the pet, reported to Rust for click-through hit-testing.
@@ -476,9 +573,8 @@ function App() {
   }, [bumpMood, sayPhrase]);
 
   // Repo watched for commits — read from config.json (app data dir), created
-  // with a sensible default on first run. Editing that file changes which
-  // repo the pet reacts to; a real picker UI comes later in Faza 4 Settings.
-  const [repoPath, setRepoPath] = useState<string | null>(null);
+  // with a sensible default on first run. Changeable via the Advanced
+  // settings panel (repoPath state declared earlier, near that panel).
   const [commitCount, setCommitCount] = useState(0);
   const [gitError, setGitError] = useState<string | null>(null);
 
@@ -668,6 +764,67 @@ function App() {
           boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
         }}
       />
+    )}
+    {settingsOpen && (
+      <div
+        onMouseDown={closeSettings}
+        style={{
+          position: "fixed",
+          inset: 0,
+        }}
+      />
+    )}
+    {settingsOpen && (
+      <div
+        onMouseDown={(e) => e.stopPropagation()}
+        style={{
+          position: "fixed",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          width: 320,
+          padding: 16,
+          borderRadius: 12,
+          background: "#fff",
+          color: "#222",
+          fontFamily: "sans-serif",
+          fontSize: 13,
+          boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
+        }}
+      >
+        <div style={{ fontWeight: 600, marginBottom: 10 }}>Advanced sozlamalar</div>
+
+        <label style={{ display: "block", marginBottom: 4 }}>Git repo yo'li:</label>
+        <input
+          value={repoPathInput}
+          onChange={(e) => setRepoPathInput(e.target.value)}
+          style={{ width: "100%", padding: 6, boxSizing: "border-box", marginBottom: 6 }}
+        />
+        <button onClick={saveRepoPath} style={{ marginBottom: 14 }}>
+          Saqlash
+        </button>
+
+        <label style={{ display: "block", marginBottom: 4 }}>
+          Cloud AI API key (ixtiyoriy — {cloudKeySet ? "saqlangan" : "kiritilmagan"}):
+        </label>
+        <input
+          type="password"
+          value={cloudKeyInput}
+          onChange={(e) => setCloudKeyInput(e.target.value)}
+          placeholder="sk-ant-..."
+          style={{ width: "100%", padding: 6, boxSizing: "border-box", marginBottom: 6 }}
+        />
+        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+          <button onClick={saveCloudKey}>Saqlash</button>
+          <button onClick={removeCloudKey} disabled={!cloudKeySet}>
+            O'chirish
+          </button>
+        </div>
+
+        {settingsStatus && <div style={{ marginBottom: 10, color: "#555" }}>{settingsStatus}</div>}
+
+        <button onClick={closeSettings}>Yopish</button>
+      </div>
     )}
     <div
       onMouseDown={onMouseDown}

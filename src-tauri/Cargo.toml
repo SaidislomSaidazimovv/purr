@@ -30,4 +30,6 @@ windows = { version = "0.61", features = [
     "Win32_System_SystemInformation",
 ] }
 rusqlite = { version = "0.32", features = ["bundled"] }
+keyring = "3"
+reqwest = { version = "0.12", features = ["json"] }
 
