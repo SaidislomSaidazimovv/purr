@@ -41,10 +41,10 @@ type PetState = "idle" | "walk" | "drag" | "fall" | "sleep";
 type Mood = "happy" | "neutral" | "grumpy";
 
 // CC0 sprite frames (public/sprites/cat/) — see ATTRIBUTION.txt there.
-// Only idle/walk/fall exist as real animations; drag and sleep reuse the
-// idle pose (sleep freezes on frame 1 and dims via CSS filter instead of
-// animating, to read as "still" rather than "active").
-const SPRITE_FRAME_COUNTS = { idle: 10, walk: 10, fall: 8 } as const;
+// happy/grumpy play while idle with that mood; drag and sleep still reuse
+// the idle pose (sleep freezes on frame 1 and dims via CSS filter instead
+// of animating, to read as "still" rather than "active").
+const SPRITE_FRAME_COUNTS = { idle: 10, walk: 10, fall: 8, happy: 8, grumpy: 10 } as const;
 type SpriteAnim = keyof typeof SPRITE_FRAME_COUNTS;
 const SPRITE_FRAME_MS = 120;
 
@@ -648,17 +648,32 @@ function App() {
   }, []);
 
   const asleep = state === "sleep";
-  const spriteAnim: SpriteAnim = state === "walk" ? "walk" : state === "fall" ? "fall" : "idle";
+  // Standing still with a mood plays a real distinct pose (Jump = happy/
+  // laughing, Hurt = upset/crying — same CC0 pack, previously unused
+  // frames) instead of just recoloring idle. Walking still uses the CSS
+  // filter below since there's no dedicated walk-while-moody art.
+  const spriteAnim: SpriteAnim =
+    state === "walk"
+      ? "walk"
+      : state === "fall"
+        ? "fall"
+        : state === "idle" && mood === "happy"
+          ? "happy"
+          : state === "idle" && mood === "grumpy"
+            ? "grumpy"
+            : "idle";
   const spriteFilter =
     state === "drag"
       ? "brightness(1.15)"
       : asleep
         ? "brightness(0.6) saturate(0.7)"
-        : mood === "happy"
-          ? "brightness(1.1) saturate(1.3)"
-          : mood === "grumpy"
-            ? "brightness(0.75) saturate(0.6)"
-            : "none";
+        : spriteAnim === "happy" || spriteAnim === "grumpy"
+          ? "none"
+          : mood === "happy"
+            ? "brightness(1.1) saturate(1.3)"
+            : mood === "grumpy"
+              ? "brightness(0.75) saturate(0.6)"
+              : "none";
 
   return (
     <>
