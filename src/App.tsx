@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { listen } from "@tauri-apps/api/event";
 import "./App.css";
 
-const PET_SIZE = 80;
-const WALK_SPEED = 60; // px/second
+const DEFAULT_PET_SIZE = 80;
+const DEFAULT_WALK_SPEED = 60; // px/second
 const FALL_SPEED = 900; // px/second^2
 const REAL_IDLE_SLEEP_SECONDS = 40 * 60; // system-wide idle this long -> sleep (Faza 2 gate)
 const CLICK_MAX_MOVE = 6; // px — below this, mouseup counts as a "click" not a drag
@@ -70,7 +69,19 @@ function PetSprite({ anim, still, filterCss }: { anim: SpriteAnim; still: boolea
   );
 }
 
-function App() {
+function App({
+  initialPetSize = DEFAULT_PET_SIZE,
+  initialWalkSpeed = DEFAULT_WALK_SPEED,
+}: {
+  initialPetSize?: number;
+  initialWalkSpeed?: number;
+}) {
+  // Settings-window values are read once at startup (see main.tsx) rather
+  // than hot-reloaded — changing them takes effect on next launch, which
+  // avoids threading live-updating size/speed through the physics loop's
+  // closures below.
+  const PET_SIZE = initialPetSize;
+  const WALK_SPEED = initialWalkSpeed;
   // Spawn resting on the ground, not floating — floating meant the first
   // click always triggered the fall/settle check unnecessarily.
   const [pos, setPos] = useState(() => ({ x: 200, y: window.innerHeight - PET_SIZE }));
@@ -117,11 +128,17 @@ function App() {
     bubbleTimeout.current = window.setTimeout(() => setBubbleText(null), ms);
   }, []);
 
+  // Ambient/triggered speech only — direct chat replies (sendChatMessage)
+  // don't go through this, so quiet hours mute unsolicited commentary
+  // without ignoring something the user actually typed to the pet.
   const sayPhrase = useCallback(
     (trigger: string) => {
-      invoke("get_phrase", { trigger })
-        .then((phrase) => {
-          if (phrase) sayRaw(phrase as string, BUBBLE_MS);
+      invoke("is_quiet_hours")
+        .then((quiet) => {
+          if (quiet) return;
+          return invoke("get_phrase", { trigger }).then((phrase) => {
+            if (phrase) sayRaw(phrase as string, BUBBLE_MS);
+          });
         })
         .catch(() => {});
     },
@@ -185,15 +202,12 @@ function App() {
     return attempt();
   }, []);
 
-  // Advanced settings (repo path + optional cloud AI key). Faza 4 will
-  // replace this with a real Settings window; for now a tray menu item
-  // ("Advanced sozlamalar") opens this same overlay-panel pattern as chat.
+  // repoPath feeds the git-commit watcher below; cloudKeySet decides
+  // whether chat uses the user's own cloud AI key or the local model.
+  // Both are configured from the real Settings window (Settings.tsx) now —
+  // see window.rs::open_settings_window.
   const [repoPath, setRepoPath] = useState<string | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [repoPathInput, setRepoPathInput] = useState("");
-  const [cloudKeyInput, setCloudKeyInput] = useState("");
   const [cloudKeySet, setCloudKeySet] = useState(false);
-  const [settingsStatus, setSettingsStatus] = useState("");
 
   const refreshCloudKeyStatus = useCallback(() => {
     invoke("has_cloud_api_key")
@@ -203,68 +217,6 @@ function App() {
 
   useEffect(() => {
     refreshCloudKeyStatus();
-  }, [refreshCloudKeyStatus]);
-
-  const openSettings = useCallback(() => {
-    setRepoPathInput(repoPath ?? "");
-    setCloudKeyInput("");
-    setSettingsStatus("");
-    refreshCloudKeyStatus();
-    setSettingsOpen(true);
-    invoke("set_drag_active", { active: true }).catch(() => {});
-  }, [repoPath, refreshCloudKeyStatus]);
-
-  const closeSettings = useCallback(() => {
-    setSettingsOpen(false);
-    invoke("set_drag_active", { active: false }).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    const unlisten = listen("open-settings", () => openSettings());
-    return () => {
-      unlisten.then((f) => f());
-    };
-  }, [openSettings]);
-
-  useEffect(() => {
-    if (!settingsOpen) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closeSettings();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [settingsOpen, closeSettings]);
-
-  const saveRepoPath = useCallback(() => {
-    const trimmed = repoPathInput.trim();
-    if (!trimmed) return;
-    invoke("set_repo_path", { repoPath: trimmed })
-      .then(() => {
-        setRepoPath(trimmed);
-        setSettingsStatus("repo yo'li saqlandi");
-      })
-      .catch((e) => setSettingsStatus(`xato: ${String(e)}`));
-  }, [repoPathInput]);
-
-  const saveCloudKey = useCallback(() => {
-    const trimmed = cloudKeyInput.trim();
-    if (!trimmed) return;
-    invoke("set_cloud_api_key", { key: trimmed })
-      .then(() => {
-        setCloudKeyInput("");
-        setSettingsStatus("cloud AI key saqlandi");
-        refreshCloudKeyStatus();
-      })
-      .catch((e) => setSettingsStatus(`xato: ${String(e)}`));
-  }, [cloudKeyInput, refreshCloudKeyStatus]);
-
-  const removeCloudKey = useCallback(() => {
-    invoke("clear_cloud_api_key")
-      .then(() => {
-        setSettingsStatus("cloud AI key o'chirildi");
-        refreshCloudKeyStatus();
-      })
-      .catch((e) => setSettingsStatus(`xato: ${String(e)}`));
   }, [refreshCloudKeyStatus]);
 
   const sendChatMessage = useCallback(
@@ -779,67 +731,6 @@ function App() {
           boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
         }}
       />
-    )}
-    {settingsOpen && (
-      <div
-        onMouseDown={closeSettings}
-        style={{
-          position: "fixed",
-          inset: 0,
-        }}
-      />
-    )}
-    {settingsOpen && (
-      <div
-        onMouseDown={(e) => e.stopPropagation()}
-        style={{
-          position: "fixed",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
-          width: 320,
-          padding: 16,
-          borderRadius: 12,
-          background: "#fff",
-          color: "#222",
-          fontFamily: "sans-serif",
-          fontSize: 13,
-          boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
-        }}
-      >
-        <div style={{ fontWeight: 600, marginBottom: 10 }}>Advanced sozlamalar</div>
-
-        <label style={{ display: "block", marginBottom: 4 }}>Git repo yo'li:</label>
-        <input
-          value={repoPathInput}
-          onChange={(e) => setRepoPathInput(e.target.value)}
-          style={{ width: "100%", padding: 6, boxSizing: "border-box", marginBottom: 6 }}
-        />
-        <button onClick={saveRepoPath} style={{ marginBottom: 14 }}>
-          Saqlash
-        </button>
-
-        <label style={{ display: "block", marginBottom: 4 }}>
-          Cloud AI API key (ixtiyoriy — {cloudKeySet ? "saqlangan" : "kiritilmagan"}):
-        </label>
-        <input
-          type="password"
-          value={cloudKeyInput}
-          onChange={(e) => setCloudKeyInput(e.target.value)}
-          placeholder="sk-ant-..."
-          style={{ width: "100%", padding: 6, boxSizing: "border-box", marginBottom: 6 }}
-        />
-        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-          <button onClick={saveCloudKey}>Saqlash</button>
-          <button onClick={removeCloudKey} disabled={!cloudKeySet}>
-            O'chirish
-          </button>
-        </div>
-
-        {settingsStatus && <div style={{ marginBottom: 10, color: "#555" }}>{settingsStatus}</div>}
-
-        <button onClick={closeSettings}>Yopish</button>
-      </div>
     )}
     <div
       onMouseDown={onMouseDown}

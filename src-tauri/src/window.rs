@@ -88,6 +88,21 @@ pub fn start_click_through_watcher(app: AppHandle) {
     });
 }
 
+/// Shows/focuses the Settings window — a real decorated/resizable/focusable
+/// OS window, unlike the always-on-top transparent pet overlay. Declared
+/// statically in tauri.conf.json (hidden at startup) rather than built
+/// dynamically here: creating a WebviewWindow at runtime from a command
+/// handler thread deadlocked (see git history), since window creation must
+/// happen on the main thread and the static declaration sidesteps that
+/// entirely. `main.tsx` picks which UI to render based on the window label.
+pub fn open_settings_window(app: &AppHandle) -> tauri::Result<()> {
+    if let Some(window) = app.get_webview_window("settings") {
+        window.show()?;
+        window.set_focus()?;
+    }
+    Ok(())
+}
+
 /// Resizes and positions the main window to cover the entire primary
 /// monitor, so the pet can walk/be dragged anywhere on screen.
 pub fn fit_to_primary_monitor(app: &AppHandle) {

@@ -4,12 +4,43 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
+use windows::Win32::System::SystemInformation::GetLocalTime;
+
+use crate::autostart;
 
 const DEFAULT_REPO_PATH: &str = "F:/Main and Private/PetApp";
+const DEFAULT_PET_SIZE: u32 = 80;
+const DEFAULT_PET_SPEED: u32 = 60;
+
+fn default_pet_size() -> u32 {
+    DEFAULT_PET_SIZE
+}
+fn default_pet_speed() -> u32 {
+    DEFAULT_PET_SPEED
+}
+fn default_quiet_hour() -> i32 {
+    -1
+}
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct AppConfig {
     pub repo_path: String,
+    #[serde(default = "default_pet_size")]
+    pub pet_size: u32,
+    #[serde(default = "default_pet_speed")]
+    pub pet_speed: u32,
+    /// Extra process names (e.g. "myide.exe") counted as "code"/work
+    /// category on top of the built-in list in tracker.rs.
+    #[serde(default)]
+    pub custom_work_apps: Vec<String>,
+    /// Hour of day (0-23); -1 means "not set". When both are set and the
+    /// current hour falls in [start, end), the rule engine stays quiet.
+    #[serde(default = "default_quiet_hour")]
+    pub quiet_hours_start: i32,
+    #[serde(default = "default_quiet_hour")]
+    pub quiet_hours_end: i32,
+    #[serde(default)]
+    pub autostart_enabled: bool,
 }
 
 pub struct ConfigState(pub Mutex<AppConfig>);
@@ -24,8 +55,7 @@ fn config_file_path(app: &AppHandle) -> PathBuf {
 }
 
 /// Loads `config.json` from the app data dir, creating it with defaults on
-/// first run. Lets the git-watcher repo path be changed by editing that file
-/// directly, without needing a full Settings UI (that comes in Faza 4).
+/// first run.
 pub fn load_or_init_config(app: &AppHandle) -> AppConfig {
     let path = config_file_path(app);
 
@@ -37,9 +67,20 @@ pub fn load_or_init_config(app: &AppHandle) -> AppConfig {
 
     let default = AppConfig {
         repo_path: DEFAULT_REPO_PATH.to_string(),
+        pet_size: DEFAULT_PET_SIZE,
+        pet_speed: DEFAULT_PET_SPEED,
+        custom_work_apps: Vec::new(),
+        quiet_hours_start: -1,
+        quiet_hours_end: -1,
+        autostart_enabled: false,
     };
     let _ = fs::write(&path, serde_json::to_string_pretty(&default).unwrap());
     default
+}
+
+fn persist(app: &AppHandle, cfg: &AppConfig) -> Result<(), String> {
+    let path = config_file_path(app);
+    fs::write(&path, serde_json::to_string_pretty(cfg).unwrap()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -47,17 +88,47 @@ pub fn get_repo_path(state: tauri::State<ConfigState>) -> String {
     state.0.lock().unwrap().repo_path.clone()
 }
 
-/// Called from the Advanced settings panel. Persists immediately so the new
-/// path survives a restart, and updates in-memory state so the frontend can
-/// switch the git watcher target without needing one.
+/// Whole-config load for the Settings window.
 #[tauri::command]
-pub fn set_repo_path(
+pub fn get_settings(state: tauri::State<ConfigState>) -> AppConfig {
+    state.0.lock().unwrap().clone()
+}
+
+/// Whole-config save from the Settings window's single "Saqlash" button.
+/// Also re-asserts the Windows autostart registry key right away, rather
+/// than waiting for the next launch.
+#[tauri::command]
+pub fn set_settings(
     app: tauri::AppHandle,
     state: tauri::State<ConfigState>,
-    repo_path: String,
+    settings: AppConfig,
 ) -> Result<(), String> {
+    autostart::set_autostart(settings.autostart_enabled)?;
     let mut cfg = state.0.lock().unwrap();
-    cfg.repo_path = repo_path;
-    let path = config_file_path(&app);
-    fs::write(&path, serde_json::to_string_pretty(&*cfg).unwrap()).map_err(|e| e.to_string())
+    *cfg = settings;
+    persist(&app, &cfg)
+}
+
+fn current_local_hour() -> u32 {
+    let st = unsafe { GetLocalTime() };
+    st.wHour as u32
+}
+
+/// True when the rule engine should stay quiet (not speak unsolicited
+/// phrases). Direct chat replies to something the user typed are not
+/// gated by this — only ambient/triggered speech is.
+#[tauri::command]
+pub fn is_quiet_hours(state: tauri::State<ConfigState>) -> bool {
+    let cfg = state.0.lock().unwrap();
+    let (start, end) = (cfg.quiet_hours_start, cfg.quiet_hours_end);
+    if start < 0 || end < 0 {
+        return false;
+    }
+    let hour = current_local_hour() as i32;
+    if start <= end {
+        hour >= start && hour < end
+    } else {
+        // Wraps past midnight, e.g. 23 -> 7.
+        hour >= start || hour < end
+    }
 }

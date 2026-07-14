@@ -64,7 +64,9 @@ pub fn idle_seconds() -> u64 {
 
 /// Very coarse activity category, based on the foreground app's executable
 /// name. Expanded over time; unknown apps fall back to "other".
-fn categorize(process_name: &str) -> &'static str {
+/// `custom_work_apps` is the user's own additions (Settings window) that
+/// count as "code" alongside the built-in list.
+fn categorize(process_name: &str, custom_work_apps: &[String]) -> &'static str {
     let name = process_name.to_lowercase();
     const CODE_APPS: &[&str] = &[
         "code.exe",
@@ -80,7 +82,9 @@ fn categorize(process_name: &str) -> &'static str {
     const BROWSER_APPS: &[&str] = &["chrome.exe", "msedge.exe", "firefox.exe", "opera.exe", "brave.exe"];
     const GAME_APPS: &[&str] = &["robloxplayerbeta.exe", "steam.exe", "valorant.exe", "leagueclientux.exe"];
 
-    if CODE_APPS.contains(&name.as_str()) {
+    let is_custom_work_app = custom_work_apps.iter().any(|a| a.to_lowercase() == name);
+
+    if CODE_APPS.contains(&name.as_str()) || is_custom_work_app {
         "code"
     } else if BROWSER_APPS.contains(&name.as_str()) {
         "browser"
@@ -99,9 +103,13 @@ pub struct ActivitySnapshot {
 }
 
 #[tauri::command]
-pub fn get_activity_snapshot() -> ActivitySnapshot {
+pub fn get_activity_snapshot(config_state: tauri::State<crate::config::ConfigState>) -> ActivitySnapshot {
     let process_name = foreground_process_name();
-    let category = process_name.as_deref().map(categorize).unwrap_or("other");
+    let custom_work_apps = config_state.0.lock().unwrap().custom_work_apps.clone();
+    let category = process_name
+        .as_deref()
+        .map(|n| categorize(n, &custom_work_apps))
+        .unwrap_or("other");
     ActivitySnapshot {
         process_name,
         category,

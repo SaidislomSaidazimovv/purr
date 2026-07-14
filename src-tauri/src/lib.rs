@@ -1,3 +1,4 @@
+mod autostart;
 mod cloud;
 mod config;
 mod db;
@@ -10,8 +11,11 @@ mod tracker;
 mod tray;
 mod window;
 
+use autostart::set_autostart;
 use cloud::send_cloud_chat;
-use config::{get_repo_path, load_or_init_config, set_repo_path, ConfigState};
+use config::{
+    get_repo_path, get_settings, is_quiet_hours, load_or_init_config, set_settings, ConfigState,
+};
 use db::{get_event_count, log_event, open_db, DbState};
 use git::{check_new_commit, GitWatcherState};
 use llm::{get_llm_port, kill_on_exit, llm_status, start_llm, stop_llm, LlmState};
@@ -43,7 +47,6 @@ pub fn run() {
             log_event,
             get_event_count,
             get_repo_path,
-            set_repo_path,
             get_phrase,
             get_memory_status,
             get_llm_port,
@@ -53,7 +56,11 @@ pub fn run() {
             send_cloud_chat,
             set_cloud_api_key,
             has_cloud_api_key,
-            clear_cloud_api_key
+            clear_cloud_api_key,
+            get_settings,
+            set_settings,
+            is_quiet_hours,
+            set_autostart
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -63,6 +70,7 @@ pub fn run() {
             let conn = open_db(&handle).expect("failed to open sqlite db");
             app.manage(DbState(std::sync::Mutex::new(conn)));
             let cfg = load_or_init_config(&handle);
+            autostart::reassert_on_startup(cfg.autostart_enabled);
             app.manage(ConfigState(std::sync::Mutex::new(cfg)));
             Ok(())
         })

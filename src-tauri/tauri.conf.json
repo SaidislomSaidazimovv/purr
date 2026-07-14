@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Purr",
         "width": 300,
         "height": 300,
@@ -22,6 +23,16 @@
         "resizable": false,
         "shadow": false,
         "focus": false
+      },
+      {
+        "label": "settings",
+        "title": "Purr — Sozlamalar",
+        "width": 480,
+        "height": 680,
+        "resizable": true,
+        "decorations": true,
+        "center": true,
+        "visible": false
       }
     ],
     "security": {
