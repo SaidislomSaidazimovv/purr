@@ -103,6 +103,17 @@ pub fn open_settings_window(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Shows the first-run onboarding window — same static-declaration approach
+/// as Settings. Called once from `.setup()` when `first_run_complete` is
+/// still false; never shown again once the user dismisses it.
+pub fn show_onboarding_window(app: &AppHandle) -> tauri::Result<()> {
+    if let Some(window) = app.get_webview_window("onboarding") {
+        window.show()?;
+        window.set_focus()?;
+    }
+    Ok(())
+}
+
 /// Resizes and positions the main window to cover the entire primary
 /// monitor, so the pet can walk/be dragged anywhere on screen.
 pub fn fit_to_primary_monitor(app: &AppHandle) {

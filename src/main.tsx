@@ -4,17 +4,27 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import App from "./App";
 import Settings from "./Settings";
+import Onboarding from "./Onboarding";
 
 const root = ReactDOM.createRoot(document.getElementById("root") as HTMLElement);
 
-// Same webview bundle serves both the pet overlay ("main") and the real
-// decorated Settings window (see window.rs::open_settings_window) — pick
-// which UI to render based on the window label.
+// Same webview bundle serves the pet overlay ("main") and the real decorated
+// Settings/Onboarding windows (see window.rs) — pick which UI to render
+// based on the window label.
 async function bootstrap() {
-  if (getCurrentWindow().label === "settings") {
+  const label = getCurrentWindow().label;
+  if (label === "settings") {
     root.render(
       <React.StrictMode>
         <Settings />
+      </React.StrictMode>,
+    );
+    return;
+  }
+  if (label === "onboarding") {
+    root.render(
+      <React.StrictMode>
+        <Onboarding />
       </React.StrictMode>,
     );
     return;

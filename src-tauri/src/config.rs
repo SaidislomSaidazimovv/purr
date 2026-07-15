@@ -41,6 +41,8 @@ pub struct AppConfig {
     pub quiet_hours_end: i32,
     #[serde(default)]
     pub autostart_enabled: bool,
+    #[serde(default)]
+    pub first_run_complete: bool,
 }
 
 pub struct ConfigState(pub Mutex<AppConfig>);
@@ -73,6 +75,7 @@ pub fn load_or_init_config(app: &AppHandle) -> AppConfig {
         quiet_hours_start: -1,
         quiet_hours_end: -1,
         autostart_enabled: false,
+        first_run_complete: false,
     };
     let _ = fs::write(&path, serde_json::to_string_pretty(&default).unwrap());
     default
@@ -106,6 +109,18 @@ pub fn set_settings(
     autostart::set_autostart(settings.autostart_enabled)?;
     let mut cfg = state.0.lock().unwrap();
     *cfg = settings;
+    persist(&app, &cfg)
+}
+
+/// Called once by the onboarding window's "Boshladik!" button — marks
+/// first-run as done so the window never auto-shows again.
+#[tauri::command]
+pub fn complete_onboarding(
+    app: tauri::AppHandle,
+    state: tauri::State<ConfigState>,
+) -> Result<(), String> {
+    let mut cfg = state.0.lock().unwrap();
+    cfg.first_run_complete = true;
     persist(&app, &cfg)
 }
 

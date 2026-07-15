@@ -14,7 +14,8 @@ mod window;
 use autostart::set_autostart;
 use cloud::send_cloud_chat;
 use config::{
-    get_repo_path, get_settings, is_quiet_hours, load_or_init_config, set_settings, ConfigState,
+    complete_onboarding, get_repo_path, get_settings, is_quiet_hours, load_or_init_config,
+    set_settings, ConfigState,
 };
 use db::{get_event_count, log_event, open_db, DbState};
 use git::{check_new_commit, GitWatcherState};
@@ -26,8 +27,8 @@ use tauri::Manager;
 use tracker::get_activity_snapshot;
 use tray::setup_tray;
 use window::{
-    fit_to_primary_monitor, set_drag_active, start_click_through_watcher, update_pet_bounds,
-    DragActiveState, PetBoundsState,
+    fit_to_primary_monitor, set_drag_active, show_onboarding_window, start_click_through_watcher,
+    update_pet_bounds, DragActiveState, PetBoundsState,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -60,7 +61,8 @@ pub fn run() {
             get_settings,
             set_settings,
             is_quiet_hours,
-            set_autostart
+            set_autostart,
+            complete_onboarding
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -71,6 +73,9 @@ pub fn run() {
             app.manage(DbState(std::sync::Mutex::new(conn)));
             let cfg = load_or_init_config(&handle);
             autostart::reassert_on_startup(cfg.autostart_enabled);
+            if !cfg.first_run_complete {
+                let _ = show_onboarding_window(&handle);
+            }
             app.manage(ConfigState(std::sync::Mutex::new(cfg)));
             Ok(())
         })
