@@ -52,6 +52,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -62,6 +63,14 @@
     "resources": {
       "../binaries/extracted": "binaries",
       "../models": "models"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM1RTVEREQ1MUQ4NTcxNDAKUldSQWNZVWQxZDNsTmJnWUpPN0toM3h2dmVaWXF2dVU4dUdZSHNncFV6NU9oWkFNcmF5TFBFNEoK",
+      "endpoints": [
+        "https://github.com/SaidislomSaidazimovv/purr/releases/latest/download/latest.json"
+      ]
     }
   }
 }

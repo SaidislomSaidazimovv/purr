@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { check as checkForUpdate } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import "./App.css";
 
 const DEFAULT_PET_SIZE = 80;
@@ -150,6 +152,25 @@ function App({
     const t = window.setTimeout(() => sayPhrase("startup"), 800);
     return () => window.clearTimeout(t);
   }, [sayPhrase]);
+
+  // Faza 4 B6: silent auto-update check, a while after startup so it never
+  // competes with the greeting bubble. No release feed yet during
+  // development — a failed/empty check is expected and stays silent.
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      checkForUpdate()
+        .then((update) => {
+          if (!update) return;
+          sayRaw("yangilanish bor, o'rnatyapman...", CHAT_BUBBLE_MS);
+          return update.downloadAndInstall().then(() => relaunch());
+        })
+        .catch(() => {
+          // No feed reachable / no releases yet — stay quiet, this isn't
+          // something the user needs to see or act on.
+        });
+    }, 5000);
+    return () => window.clearTimeout(t);
+  }, [sayRaw]);
 
   // Faza 3: chat — double-click opens a text input, sent to the local LLM.
   // The window is made fully click-through-disabled (like during drag)
