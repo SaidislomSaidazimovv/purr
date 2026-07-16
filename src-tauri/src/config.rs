@@ -11,6 +11,7 @@ use crate::autostart;
 const DEFAULT_REPO_PATH: &str = "F:/Main and Private/PetApp";
 const DEFAULT_PET_SIZE: u32 = 80;
 const DEFAULT_PET_SPEED: u32 = 60;
+const DEFAULT_SKIN_ID: &str = "cat";
 
 fn default_pet_size() -> u32 {
     DEFAULT_PET_SIZE
@@ -20,6 +21,9 @@ fn default_pet_speed() -> u32 {
 }
 fn default_quiet_hour() -> i32 {
     -1
+}
+fn default_skin_id() -> String {
+    DEFAULT_SKIN_ID.to_string()
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -43,6 +47,11 @@ pub struct AppConfig {
     pub autostart_enabled: bool,
     #[serde(default)]
     pub first_run_complete: bool,
+    /// Which sprite set to render (folder name under public/sprites/,
+    /// e.g. "cat", "dog"). A plain field for now — when Faza 5.3 (multiple
+    /// pets) lands, each pet's initial skin seeds from this same value.
+    #[serde(default = "default_skin_id")]
+    pub skin_id: String,
 }
 
 pub struct ConfigState(pub Mutex<AppConfig>);
@@ -76,6 +85,7 @@ pub fn load_or_init_config(app: &AppHandle) -> AppConfig {
         quiet_hours_end: -1,
         autostart_enabled: false,
         first_run_complete: false,
+        skin_id: DEFAULT_SKIN_ID.to_string(),
     };
     let _ = fs::write(&path, serde_json::to_string_pretty(&default).unwrap());
     default

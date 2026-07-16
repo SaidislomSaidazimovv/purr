@@ -1,0 +1,21 @@
+Dog sprite frames (idle/, walk/, fall/, happy/, grumpy/) sourced from:
+
+"Cat & Dog - Free Sprites" by the OpenGameArt.org contributor
+https://opengameart.org/content/cat-dog-free-sprites
+Original download: https://opengameart.org/sites/default/files/CatnDog.zip
+
+License: CC0 1.0 Universal (public domain) — no attribution legally
+required, but kept here for provenance. Free to use, modify, and
+redistribute, including in commercial products.
+
+Same pack as public/sprites/cat/ — this is the Dog character, previously
+unused. Used from the dog character (renamed to 1.png, 2.png, ... in
+original frame order):
+- Idle -> idle/
+- Walk -> walk/
+- Fall -> fall/
+- Jump -> happy/ (excited pose, shown when mood is happy and idle)
+- Hurt -> grumpy/ (upset pose, shown when mood is grumpy and idle)
+
+The Dead/Run/Slide animations were not used (matches the cat skin's
+unused set).

@@ -9,7 +9,14 @@ interface AppConfig {
   quiet_hours_start: number;
   quiet_hours_end: number;
   autostart_enabled: boolean;
+  skin_id: string;
 }
+
+// Faza 5.1: skin shop. Each entry is a folder under public/sprites/<id>/.
+const SKINS = [
+  { id: "cat", label: "Mushuk" },
+  { id: "dog", label: "It" },
+];
 
 // Real decorated/resizable OS window (see window.rs::open_settings_window),
 // not the old overlay panel — no click-away/Escape dismiss logic needed
@@ -46,7 +53,9 @@ function Settings() {
     invoke("set_settings", { settings: updated })
       .then(() => {
         setConfig(updated);
-        setStatus("saqlandi — pet o'lchami/tezligi keyingi ishga tushirishda kuchga kiradi");
+        setStatus(
+          "saqlandi — pet o'lchami/tezligi/skin keyingi ishga tushirishda kuchga kiradi",
+        );
       })
       .catch((e) => setStatus(`xato: ${String(e)}`));
   }, [config, workAppsText]);
@@ -113,6 +122,38 @@ function Settings() {
             style={{ width: "100%", padding: 6, boxSizing: "border-box" }}
           />
         </label>
+      </fieldset>
+
+      <fieldset style={{ marginBottom: 16 }}>
+        <legend>Skin</legend>
+        <div style={{ display: "flex", gap: 10 }}>
+          {SKINS.map((skin) => (
+            <button
+              key={skin.id}
+              onClick={() => setConfig({ ...config, skin_id: skin.id })}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 4,
+                padding: 8,
+                width: 72,
+                borderRadius: 8,
+                cursor: "pointer",
+                border:
+                  config.skin_id === skin.id ? "2px solid #222" : "2px solid transparent",
+                background: config.skin_id === skin.id ? "#eee" : "transparent",
+              }}
+            >
+              <img
+                src={`/sprites/${skin.id}/idle/1.png`}
+                alt={skin.label}
+                style={{ width: 48, height: 48, objectFit: "contain" }}
+              />
+              <span>{skin.label}</span>
+            </button>
+          ))}
+        </div>
       </fieldset>
 
       <fieldset style={{ marginBottom: 16 }}>

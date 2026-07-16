@@ -30,21 +30,25 @@ async function bootstrap() {
     return;
   }
 
-  // Pet size/speed are read once here rather than hot-reloaded inside App,
-  // so the physics loop never has to react to them changing mid-session.
+  // Pet size/speed/skin are read once here rather than hot-reloaded inside
+  // App, so the physics loop never has to react to them changing mid-session.
   let petSize: number | undefined;
   let walkSpeed: number | undefined;
+  let skinId: string | undefined;
   try {
-    const cfg = await invoke<{ pet_size: number; pet_speed: number }>("get_settings");
+    const cfg = await invoke<{ pet_size: number; pet_speed: number; skin_id: string }>(
+      "get_settings",
+    );
     petSize = cfg.pet_size;
     walkSpeed = cfg.pet_speed;
+    skinId = cfg.skin_id;
   } catch {
     // Fall through to App's own defaults.
   }
 
   root.render(
     <React.StrictMode>
-      <App initialPetSize={petSize} initialWalkSpeed={walkSpeed} />
+      <App initialPetSize={petSize} initialWalkSpeed={walkSpeed} initialSkinId={skinId} />
     </React.StrictMode>,
   );
 }

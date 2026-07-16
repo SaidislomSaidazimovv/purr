@@ -41,30 +41,52 @@ const MOOD_GRUMPY_THRESHOLD = -30;
 type PetState = "idle" | "walk" | "drag" | "fall" | "sleep";
 type Mood = "happy" | "neutral" | "grumpy";
 
-// CC0 sprite frames (public/sprites/cat/) — see ATTRIBUTION.txt there.
-// happy/grumpy play while idle with that mood; drag and sleep still reuse
-// the idle pose (sleep freezes on frame 1 and dims via CSS filter instead
-// of animating, to read as "still" rather than "active").
-const SPRITE_FRAME_COUNTS = { idle: 10, walk: 10, fall: 8, happy: 8, grumpy: 10 } as const;
-type SpriteAnim = keyof typeof SPRITE_FRAME_COUNTS;
+// CC0 sprite frames (public/sprites/<skinId>/) — see ATTRIBUTION.txt in
+// each skin folder. happy/grumpy play while idle with that mood; drag and
+// sleep still reuse the idle pose (sleep freezes on frame 1 and dims via
+// CSS filter instead of animating, to read as "still" rather than "active").
+// Faza 5.1: skins are separate sprite sets (currently "cat", "dog"), picked
+// in Settings and stored as config.skin_id. Frame counts happen to match
+// today, but are kept per-skin so a future skin with a different frame
+// count doesn't silently desync.
+const SKIN_FRAME_COUNTS: Record<
+  string,
+  { idle: number; walk: number; fall: number; happy: number; grumpy: number }
+> = {
+  cat: { idle: 10, walk: 10, fall: 8, happy: 8, grumpy: 10 },
+  dog: { idle: 10, walk: 10, fall: 8, happy: 8, grumpy: 10 },
+};
+const DEFAULT_SKIN_ID = "cat";
+type SpriteAnim = keyof (typeof SKIN_FRAME_COUNTS)[typeof DEFAULT_SKIN_ID];
 const SPRITE_FRAME_MS = 120;
 
-function PetSprite({ anim, still, filterCss }: { anim: SpriteAnim; still: boolean; filterCss: string }) {
+function PetSprite({
+  skinId,
+  anim,
+  still,
+  filterCss,
+}: {
+  skinId: string;
+  anim: SpriteAnim;
+  still: boolean;
+  filterCss: string;
+}) {
   const [frame, setFrame] = useState(0);
+  const frameCounts = SKIN_FRAME_COUNTS[skinId] ?? SKIN_FRAME_COUNTS[DEFAULT_SKIN_ID];
 
   useEffect(() => {
     setFrame(0);
     if (still) return;
     const id = setInterval(() => {
-      setFrame((f) => (f + 1) % SPRITE_FRAME_COUNTS[anim]);
+      setFrame((f) => (f + 1) % frameCounts[anim]);
     }, SPRITE_FRAME_MS);
     return () => clearInterval(id);
-  }, [anim, still]);
+  }, [anim, still, frameCounts]);
 
-  const frameNum = (still ? 0 : frame % SPRITE_FRAME_COUNTS[anim]) + 1;
+  const frameNum = (still ? 0 : frame % frameCounts[anim]) + 1;
   return (
     <img
-      src={`/sprites/cat/${anim}/${frameNum}.png`}
+      src={`/sprites/${skinId}/${anim}/${frameNum}.png`}
       draggable={false}
       style={{ width: "100%", height: "100%", objectFit: "contain", filter: filterCss }}
     />
@@ -74,16 +96,20 @@ function PetSprite({ anim, still, filterCss }: { anim: SpriteAnim; still: boolea
 function App({
   initialPetSize = DEFAULT_PET_SIZE,
   initialWalkSpeed = DEFAULT_WALK_SPEED,
+  initialSkinId = DEFAULT_SKIN_ID,
 }: {
   initialPetSize?: number;
   initialWalkSpeed?: number;
+  initialSkinId?: string;
 }) {
   // Settings-window values are read once at startup (see main.tsx) rather
   // than hot-reloaded — changing them takes effect on next launch, which
   // avoids threading live-updating size/speed through the physics loop's
-  // closures below.
+  // closures below. Same rule for skin — simplest to reason about, and
+  // consistent with how pet_size/pet_speed already behave.
   const PET_SIZE = initialPetSize;
   const WALK_SPEED = initialWalkSpeed;
+  const skinId = initialSkinId;
   // Spawn resting on the ground, not floating — floating meant the first
   // click always triggered the fall/settle check unnecessarily.
   const [pos, setPos] = useState(() => ({ x: 200, y: window.innerHeight - PET_SIZE }));
@@ -767,7 +793,7 @@ function App({
         transition: "transform 120ms ease-out, opacity 400ms ease, filter 200ms ease",
       }}
     >
-      <PetSprite anim={spriteAnim} still={asleep} filterCss={spriteFilter} />
+      <PetSprite skinId={skinId} anim={spriteAnim} still={asleep} filterCss={spriteFilter} />
     </div>
     </>
   );
