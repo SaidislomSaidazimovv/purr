@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { check as checkForUpdate } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -16,6 +17,8 @@ const BUBBLE_MS = 4500; // how long a spoken line stays visible
 const CHAT_BUBBLE_MS = 12000; // LLM replies are longer, give them more time on screen
 const LONG_FOCUS_MS = 2 * 60 * 60 * 1000; // continuous "code" time before the pet comments
 const DOUBLE_CLICK_MS = 400; // second click within this window opens chat instead of reacting
+const POMODORO_WORK_MS = 25 * 60 * 1000;
+const POMODORO_BREAK_MS = 5 * 60 * 1000;
 
 // English, not Uzbek — this small model's Uzbek output is rough (expected
 // for a low-resource language on a 1.5B model), but it writes natural,
@@ -40,6 +43,12 @@ const MOOD_GRUMPY_THRESHOLD = -30;
 
 type PetState = "idle" | "walk" | "drag" | "fall" | "sleep";
 type Mood = "happy" | "neutral" | "grumpy";
+type PomodoroPhase = "work" | "break";
+interface PomodoroState {
+  phase: PomodoroPhase;
+  remainingMs: number;
+  running: boolean;
+}
 
 // CC0 sprite frames (public/sprites/<skinId>/) — see ATTRIBUTION.txt in
 // each skin folder. happy/grumpy play while idle with that mood; drag and
@@ -172,6 +181,94 @@ function App({
     },
     [sayRaw],
   );
+
+  // Faza 5.2: Pomodoro. null = no session. Controlled entirely from the
+  // tray menu (see tray.rs) rather than a click on the pet, since single-
+  // and double-click are already taken by reactions/chat.
+  const [pomodoro, setPomodoro] = useState<PomodoroState | null>(null);
+
+  const togglePomodoro = useCallback(() => {
+    setPomodoro((p) => {
+      if (!p) return { phase: "work", remainingMs: POMODORO_WORK_MS, running: true };
+      return { ...p, running: !p.running };
+    });
+  }, []);
+
+  const resetPomodoro = useCallback(() => setPomodoro(null), []);
+
+  // Tick once a second while running. Phase-switch side effects (speech,
+  // tray sync) are handled by the effects below instead of in here, so
+  // React StrictMode's dev-only double-invoke of updater functions can't
+  // double-fire them.
+  useEffect(() => {
+    if (!pomodoro?.running) return;
+    const id = setInterval(() => {
+      setPomodoro((p) => {
+        if (!p || !p.running) return p;
+        if (p.remainingMs <= 1000) {
+          const nextPhase: PomodoroPhase = p.phase === "work" ? "break" : "work";
+          return {
+            phase: nextPhase,
+            remainingMs: nextPhase === "work" ? POMODORO_WORK_MS : POMODORO_BREAK_MS,
+            running: true,
+          };
+        }
+        return { ...p, remainingMs: p.remainingMs - 1000 };
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [pomodoro?.running]);
+
+  // Announces a phase switch exactly once (guarded by the ref so it never
+  // fires on the initial mount, only on an actual work<->break transition).
+  const pomodoroPhaseRef = useRef<PomodoroPhase | null>(null);
+  useEffect(() => {
+    if (!pomodoro) {
+      pomodoroPhaseRef.current = null;
+      return;
+    }
+    if (pomodoroPhaseRef.current !== null && pomodoroPhaseRef.current !== pomodoro.phase) {
+      sayPhrase(pomodoro.phase === "break" ? "pomodoro_work_done" : "pomodoro_break_done");
+    }
+    pomodoroPhaseRef.current = pomodoro.phase;
+  }, [pomodoro?.phase, sayPhrase]);
+
+  // Tray menu items are the only UI for this — relabel/re-tooltip them
+  // every time the session state changes (including every tick, so the
+  // hover tooltip's remaining time stays roughly current).
+  useEffect(() => {
+    if (!pomodoro) {
+      invoke("set_pomodoro_status", {
+        label: "Pomodoro: boshlash",
+        tooltip: "",
+      }).catch(() => {});
+      return;
+    }
+    const mins = Math.floor(pomodoro.remainingMs / 60000);
+    const secs = Math.floor((pomodoro.remainingMs % 60000) / 1000)
+      .toString()
+      .padStart(2, "0");
+    const timeStr = `${mins}:${secs}`;
+    const phaseLabel = pomodoro.phase === "work" ? "ish" : "dam olish";
+    const label = pomodoro.running
+      ? `Pomodoro: pauza (${timeStr})`
+      : `Pomodoro: davom ettirish (${timeStr})`;
+    const tooltip = `Purr — Pomodoro: ${phaseLabel}, ${timeStr} qoldi${
+      pomodoro.running ? "" : " (pauzada)"
+    }`;
+    invoke("set_pomodoro_status", { label, tooltip }).catch(() => {});
+  }, [pomodoro]);
+
+  // Tray menu dispatches these two events (see tray.rs) rather than calling
+  // into the frontend directly — the timer itself only exists here.
+  useEffect(() => {
+    const unlistenToggle = listen("pomodoro-toggle", () => togglePomodoro());
+    const unlistenReset = listen("pomodoro-reset", () => resetPomodoro());
+    return () => {
+      unlistenToggle.then((f) => f());
+      unlistenReset.then((f) => f());
+    };
+  }, [togglePomodoro, resetPomodoro]);
 
   // Gate: pet greets you shortly after the app starts.
   useEffect(() => {
@@ -706,6 +803,13 @@ function App({
         ram: {memStatus ? `${memStatus.free_mb} / ${memStatus.total_mb} MB (${memStatus.free_percent.toFixed(1)}%)` : "?"}
         <br />
         llm: {llmRunning ? "ishlayapti" : "to'xtatilgan"}
+        <br />
+        pomodoro:{" "}
+        {pomodoro
+          ? `${pomodoro.phase} ${Math.ceil(pomodoro.remainingMs / 1000)}s ${
+              pomodoro.running ? "" : "(pauza)"
+            }`
+          : "yo'q"}
         {gitError && <div style={{ color: "#f55" }}>git xato: {gitError}</div>}
       </div>
     )}

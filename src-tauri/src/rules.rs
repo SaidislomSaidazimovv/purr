@@ -226,6 +226,42 @@ const CLICK_PHRASES: &[&str] = &[
     "keep it up and i'm hiding under the desk",
 ];
 
+const POMODORO_WORK_DONE_PHRASES: &[&str] = &[
+    "time's up go stretch or something",
+    "25 minutes done now leave the screen for a bit",
+    "break time don't argue with me",
+    "you survived the work block barely",
+    "go get water i'll watch the screen for you",
+    "session's over now shoo",
+    "that's enough staring for now",
+    "break time even i rest more than that",
+    "you can stop pretending to focus now",
+    "timer's done go be a person for five minutes",
+    "alright that's a wrap for now",
+    "five minutes of freedom starts now don't waste it on the screen",
+    "you did the work thing now do the rest thing",
+    "off you go rest is mandatory not optional",
+    "the clock says break i agree with the clock",
+];
+
+const POMODORO_BREAK_DONE_PHRASES: &[&str] = &[
+    "break's over yes i timed it",
+    "back to work unfortunately for both of us",
+    "rest time's up don't look at me like that",
+    "five minutes gone already get back to it",
+    "okay break's done now go pretend to be productive",
+    "the fun's over it's work time again",
+    "you rested now go suffer some more",
+    "clock says work again blame the clock not me",
+    "back to the grind i'll be here judging",
+    "break ended right on schedule sadly",
+    "time to work again i already miss the quiet",
+    "get back to it the timer doesn't care about your feelings",
+    "rest's done reality's calling",
+    "back at it champ or whatever you are",
+    "the break's gone same as always",
+];
+
 fn phrases_for(trigger: &str) -> &'static [&'static str] {
     match trigger {
         "startup" => STARTUP_PHRASES,
@@ -234,6 +270,8 @@ fn phrases_for(trigger: &str) -> &'static [&'static str] {
         "commit" => COMMIT_PHRASES,
         "long_idle" => LONG_IDLE_PHRASES,
         "click" => CLICK_PHRASES,
+        "pomodoro_work_done" => POMODORO_WORK_DONE_PHRASES,
+        "pomodoro_break_done" => POMODORO_BREAK_DONE_PHRASES,
         _ => &[],
     }
 }

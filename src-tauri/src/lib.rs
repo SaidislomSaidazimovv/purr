@@ -25,7 +25,7 @@ use rules::{get_phrase, RulesState};
 use secrets::{clear_cloud_api_key, has_cloud_api_key, set_cloud_api_key};
 use tauri::Manager;
 use tracker::get_activity_snapshot;
-use tray::setup_tray;
+use tray::{set_pomodoro_status, setup_tray};
 use window::{
     fit_to_primary_monitor, set_drag_active, show_onboarding_window, start_click_through_watcher,
     update_pet_bounds, DragActiveState, PetBoundsState,
@@ -64,7 +64,8 @@ pub fn run() {
             set_settings,
             is_quiet_hours,
             set_autostart,
-            complete_onboarding
+            complete_onboarding,
+            set_pomodoro_status
         ])
         .setup(|app| {
             let handle = app.handle().clone();
